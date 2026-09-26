@@ -16,6 +16,12 @@ import { SettingsCard, type Settings } from './components/SettingsCard';
 const SCAN_MS = 1400;
 const FRAME_LOG_SIZE = 6;
 
+/** `?text=Hello` in the URL plays that text on load; otherwise the first sample detection. */
+function initialDetection(): Detection {
+  const text = new URLSearchParams(window.location.search).get('text')?.trim();
+  return text ? manualDetection(text) : makeDetection(SAMPLES[0], 'simulated');
+}
+
 export default function App() {
   const [settings, setSettings] = useState<Settings>({
     cellMs: 900,
@@ -23,7 +29,7 @@ export default function App() {
     loop: false,
     capitalIndicators: true,
   });
-  const [detection, setDetection] = useState<Detection>(() => makeDetection(SAMPLES[0], 'simulated'));
+  const [detection, setDetection] = useState<Detection>(initialDetection);
   const [scanning, setScanning] = useState(false);
   const sampleCursor = useRef(1);
   const scanTimer = useRef<number | null>(null);
