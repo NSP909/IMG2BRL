@@ -1,0 +1,11 @@
+[Unit]
+Description=Braille cell / solenoid controller (HTTP on :8080)
+After=network.target
+[Service]
+User=pi
+WorkingDirectory=/home/pi
+ExecStart=/usr/bin/python3 /home/pi/solenoid_server.py
+Restart=on-failure
+RestartSec=2
+[Install]
+WantedBy=multi-user.target

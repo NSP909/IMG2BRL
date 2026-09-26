@@ -1,0 +1,8 @@
+[Unit]
+Description=Unblock Wi-Fi radio (rfkill) at boot
+Before=NetworkManager.service
+[Service]
+Type=oneshot
+ExecStart=/bin/sh -c "for f in /sys/class/rfkill/rfkill*/soft; do echo 0 > $f; done"
+[Install]
+WantedBy=multi-user.target
