@@ -1039,6 +1039,23 @@ class Handler(BaseHTTPRequestHandler):
                     STATE["asl"].update(label=None, stable_count=0, last_spoken=None)
             log(f"camera mode -> {v}")
             return self._json(200, snapshot())
+        if u.path == "/asl_frame":
+            # Browser-captured frame (getUserMedia), for testing/demoing ASL mode
+            # without granting the bridge process its own OS camera permission --
+            # a JPEG POSTed here goes straight through the same ASL.process() path
+            # asl_pass() uses, it just doesn't come from capture_loop's STATE["frame"].
+            import cv2  # local import: matches capture_loop()'s pattern elsewhere in this file
+            if STATE["camera_mode"] != "asl":
+                return self._json(409, {"error": "camera_mode is not 'asl'"})
+            length = int(self.headers.get("Content-Length", 0))
+            if length <= 0:
+                return self._json(400, {"error": "empty request body"})
+            body = self.rfile.read(length)
+            frame = cv2.imdecode(np.frombuffer(body, dtype=np.uint8), cv2.IMREAD_COLOR)
+            if frame is None:
+                return self._json(400, {"error": "could not decode image"})
+            asl_pass(frame)
+            return self._json(200, {"asl": dict(STATE["asl"])})
         return self._json(404, {"error": "unknown path"})
 
 

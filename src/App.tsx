@@ -7,6 +7,8 @@ import { useBridge } from './hooks/useBridge';
 import { TopBar, type Status, type View } from './components/TopBar';
 import { LabView } from './components/LabView';
 import { Viewfinder, type LiveFeed } from './components/Viewfinder';
+import { bridgeSendAslFrame, type AslStatus } from './lib/bridge';
+import { BragiPanel } from './components/BragiPanel';
 import { DetectionCard } from './components/DetectionCard';
 import { QueueCard } from './components/QueueCard';
 import { ComposeCard } from './components/ComposeCard';
@@ -21,6 +23,10 @@ const SCAN_MS = 1400;
 const FRAME_LOG_SIZE = 6;
 /** Pause between one queued message finishing and the next starting. */
 const QUEUE_GAP_MS = 700;
+/** Shown only until the bridge's first /state response arrives. */
+const DEFAULT_ASL: AslStatus = {
+  available: false, classifier: 'knn', label: null, stable_count: 0, stable_needed: 2, last_spoken: null, error: null,
+};
 
 /** `?text=Hello` in the URL plays that text on load; otherwise wait for real input. */
 function initialDetection(): Detection | null {
@@ -211,6 +217,28 @@ export default function App() {
     },
     [bridgeSetCameraMode],
   );
+  const { baseUrl } = bridge;
+  const handleAslFrame = useCallback(
+    (blob: Blob) => {
+      void bridgeSendAslFrame(baseUrl, blob);
+    },
+    [baseUrl],
+  );
+
+  // Bragi's spoken-letter history: the bridge only reports the single most
+  // recent one (STATE["asl"]["last_spoken"]), so track transitions ourselves
+  // to build a running "what's been said" readout for the panel.
+  const [aslHistory, setAslHistory] = useState<string[]>([]);
+  const lastSpokenRef = useRef<string | null>(null);
+  const lastSpoken = bridge.state?.asl.last_spoken ?? null;
+  useEffect(() => {
+    if (lastSpoken && lastSpoken !== lastSpokenRef.current) {
+      setAslHistory((h) => [...h, lastSpoken]);
+    }
+    lastSpokenRef.current = lastSpoken;
+  }, [lastSpoken]);
+  const clearAslHistory = useCallback(() => setAslHistory([]), []);
+
   const liveFeed: LiveFeed | null =
     bridge.online && bridge.state && !soundMode
       ? {
@@ -254,22 +282,43 @@ export default function App() {
       ) : (
       <main className="layout">
         <div className="col" aria-label="Input">
-          {!soundMode && <Viewfinder detection={scanning ? null : detection} scanning={scanning} onCapture={capture} live={liveFeed} />}
+          {!soundMode && (
+            <Viewfinder
+              detection={scanning ? null : detection}
+              scanning={scanning}
+              onCapture={capture}
+              live={liveFeed}
+              aslActive={aslMode}
+              onAslFrame={handleAslFrame}
+            />
+          )}
           {hasMic && <SoundPanel bridge={bridge} />}
-          <DetectionCard detection={detection} cellCount={cells.length} />
-          <QueueCard bridge={bridge} nowPlaying={nowPlaying} />
-          <ComposeCard onSend={sendText} disabled={scanning} />
+          {!aslMode && (
+            <>
+              <DetectionCard detection={detection} cellCount={cells.length} />
+              <QueueCard bridge={bridge} nowPlaying={nowPlaying} />
+              <ComposeCard onSend={sendText} disabled={scanning} />
+            </>
+          )}
         </div>
 
-        <div className="col" aria-label="Output">
-          <CellHero stream={stream} />
-          <SequenceStrip text={detection?.label ?? ''} cells={cells} index={stream.index} onSelect={stream.seek} />
-        </div>
+        {aslMode ? (
+          <div className="col" aria-label="Output">
+            <BragiPanel asl={bridge.state?.asl ?? DEFAULT_ASL} history={aslHistory} onClear={clearAslHistory} />
+          </div>
+        ) : (
+          <>
+            <div className="col" aria-label="Output">
+              <CellHero stream={stream} />
+              <SequenceStrip text={detection?.label ?? ''} cells={cells} index={stream.index} onSelect={stream.seek} />
+            </div>
 
-        <div className="bottom">
-          <PinPanel cell={stream.current} frames={frames} hardware={hardware} />
-          <SettingsCard settings={settings} onChange={setSettings} />
-        </div>
+            <div className="bottom">
+              <PinPanel cell={stream.current} frames={frames} hardware={hardware} />
+              <SettingsCard settings={settings} onChange={setSettings} />
+            </div>
+          </>
+        )}
       </main>
       )}
 
@@ -277,15 +326,6 @@ export default function App() {
         Uncontracted braille, one 3 × 2 cell at a time. Pin numbering follows the standard cell: 1–3 down the left column, 4–6 down the right.
         {hardware.live ? ` Live on the Pi at ${hardware.host}.` : ' Hardware offline: simulating.'}
         {bridge.online ? ` ${recognizer === 'both' ? 'Camera + microphone' : soundMode ? 'Sound' : 'Camera'} bridge connected.` : ' Bridge not connected: start bridge/detect_bridge.py.'}
-        {aslMode && bridge.state
-          ? ` Bragi (${bridge.state.asl.classifier}): ${
-              !bridge.state.asl.available
-                ? bridge.state.asl.error || 'loading the hand model…'
-                : bridge.state.asl.label
-                  ? `reading "${bridge.state.asl.label}"`
-                  : 'no hand in view'
-            }${bridge.state.asl.last_spoken ? ` — last spoken "${bridge.state.asl.last_spoken}"` : ''}. Spoken locally, not sent to the pins.`
-          : ''}
         {!aslMode && (cameraModeError || bridge.state?.asl.error) ? ` ⚠ ${cameraModeError || bridge.state?.asl.error}` : ''}
       </footer>
     </div>

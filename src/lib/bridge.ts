@@ -247,3 +247,22 @@ export function bridgeSetRotate(baseUrl: string, deg: 0 | 90 | 180 | 270): Promi
 export function bridgeSetCameraMode(baseUrl: string, mode: CameraMode): Promise<BridgeState> {
   return post<BridgeState>(baseUrl, `/camera_mode?value=${mode}`);
 }
+
+/** Browser-captured frame (getUserMedia) for ASL mode, bypassing the bridge's
+ * own OS camera access entirely -- handy when the bridge process hasn't been
+ * granted camera permission but the browser tab has. Silently drops failures
+ * (an occasional missed frame just means one skipped detect pass). */
+export async function bridgeSendAslFrame(baseUrl: string, blob: Blob): Promise<AslStatus | null> {
+  try {
+    const res = await fetch(`${baseUrl}/asl_frame`, {
+      method: 'POST',
+      body: blob,
+      headers: { 'Content-Type': 'image/jpeg' },
+    });
+    if (!res.ok) return null;
+    const data = (await res.json()) as { asl: AslStatus };
+    return data.asl;
+  } catch {
+    return null;
+  }
+}
