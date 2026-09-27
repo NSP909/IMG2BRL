@@ -11,6 +11,11 @@ interface Props {
   /** True when cells are being driven onto the real solenoids. */
   live: boolean;
   host: string;
+  /** The user's chosen target: drive the real Pi, or simulate on the laptop. */
+  hardwareEnabled: boolean;
+  onSetHardwareEnabled(enabled: boolean): void;
+  /** The Pi answers pings right now -- "Live" can't be picked until it does. */
+  hardwareOnline: boolean;
   view: View;
   onView(view: View): void;
   /** Stop playback, drop the pins, clear the queue. */
@@ -44,7 +49,7 @@ const STATUS_TEXT: Record<Status, string> = {
   complete: 'Message complete',
 };
 
-export function TopBar({ status, index, total, live, host, view, onView, onStop, pinsLocked, onLockPins, recognizer, cameraPaused, onPauseCamera, micPaused, onPauseMic, nearbyVoice, cameraMode, onCameraMode, cameraModeBusy, bridgeOffline }: Props) {
+export function TopBar({ status, index, total, live, host, hardwareEnabled, onSetHardwareEnabled, hardwareOnline, view, onView, onStop, pinsLocked, onLockPins, recognizer, cameraPaused, onPauseCamera, micPaused, onPauseMic, nearbyVoice, cameraMode, onCameraMode, cameraModeBusy, bridgeOffline }: Props) {
   const showCount = status === 'streaming' || status === 'paused';
   const hasMic = recognizer !== 'camera';
   const hasCamera = recognizer !== 'sound';
@@ -105,6 +110,18 @@ export function TopBar({ status, index, total, live, host, view, onView, onStop,
             Nearby voice on
           </span>
         )}
+        <nav
+          className="tabs"
+          aria-label="Hardware target"
+          title={hardwareOnline ? 'Drive the real Pi, or simulate here on the laptop' : `Pi not reachable at ${host} -- Live can't be picked until it answers`}
+        >
+          <button type="button" className={`tab ${hardwareEnabled ? 'is-active' : ''}`} disabled={!hardwareOnline} onClick={() => onSetHardwareEnabled(true)}>
+            Live
+          </button>
+          <button type="button" className={`tab ${!hardwareEnabled ? 'is-active' : ''}`} onClick={() => onSetHardwareEnabled(false)}>
+            Laptop
+          </button>
+        </nav>
         <span className="pill" title={pinsLocked ? 'Pins are locked on the Pi' : live ? `Solenoid cell on the Pi at ${host}` : 'The Pi is not driving pins right now'}>
           <span className={`pill__dot ${pinsLocked ? 'pill__dot--locked' : live ? 'pill__dot--live' : 'pill__dot--sim'}`} />
           {pinsLocked ? 'Pins locked' : live ? 'Live hardware' : 'Simulated hardware'}

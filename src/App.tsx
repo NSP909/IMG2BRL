@@ -282,6 +282,9 @@ export default function App() {
         total={stream.total}
         live={hardware.live}
         host={hardware.host}
+        hardwareEnabled={hardware.enabled}
+        onSetHardwareEnabled={hardware.setEnabled}
+        hardwareOnline={hardware.online}
         view={view}
         onView={setView}
         onStop={stop}
