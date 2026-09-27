@@ -7,6 +7,7 @@
 #   ./solenoid.sh cell 0b010011 [ms]   raise the dots of a 6-bit mask (bit n-1 = dot n)
 #   ./solenoid.sh text "Hello 42" [cell_ms] [space_ms]   play text as braille on the Pi
 #   ./solenoid.sh stop            stop braille playback
+#   ./solenoid.sh wifi ap|client  Pi hosts hotspot "IMG2BRL" (Pi at 10.42.0.1) / rejoins saved Wi-Fi
 PI="${PI:-169.254.10.10}"; BASE="http://$PI:8080"
 urlenc() { python3 -c 'import sys,urllib.parse; print(urllib.parse.quote(sys.argv[1]))' "$1"; }
 case "${1:-panel}" in
@@ -15,6 +16,7 @@ case "${1:-panel}" in
   state) curl -s "$BASE/state"; echo ;;
   alloff) curl -s -X POST "$BASE/alloff" >/dev/null && echo "all off" ;;
   stop) curl -s -X POST "$BASE/braille/stop" >/dev/null && echo "braille stopped" ;;
+  wifi) curl -s -X POST "$BASE/wifi?mode=${2:-client}" | python3 -c 'import sys,json; w=json.load(sys.stdin)["wifi"]; print("wifi:", w["mode"], w.get("connection"), w.get("ip"))' ;;
   on|off) curl -s -X POST "$BASE/$1/$2" >/dev/null && echo "solenoid $2 $1" ;;
   cell) m=$(( $2 )); curl -s -X POST "$BASE/cell?mask=$m&ms=${3:-900}" >/dev/null && echo "cell mask $2 for ${3:-900} ms" ;;
   text) curl -s -X POST "$BASE/braille?text=$(urlenc "$2")&cell_ms=${3:-900}&space_ms=${4:-500}" | python3 -c 'import sys,json; b=json.load(sys.stdin)["braille"]; print("playing", b["total"], "cells:", b["preview"])' ;;

@@ -183,6 +183,17 @@ The Pi is set up as a USB Ethernet gadget: plug its `USB` port into a
 computer and it appears at `169.254.10.10` (also `raspberrypi.local`), user
 `pi`. It also joins Wi-Fi when a saved network is in range.
 
+Ways to reach it without the cable, in order of preference:
+
+| Option | How | Trade-off |
+| --- | --- | --- |
+| Same ordinary Wi-Fi | add the network over USB: `sudo nmcli dev wifi connect "<ssid>" password "<pw>"` on the Pi | apartment/campus networks usually isolate clients: the Pi gets internet but the laptop cannot reach it (Tempo - Resident does this) |
+| Phone hotspot, 2.4 GHz | add it the same way; laptop joins it too | everyone keeps internet, so Claude keeps working; best for walking around |
+| **Pi hotspot (AP mode)** | `./tools/solenoid.sh wifi ap` (or `POST /wifi?mode=ap`); join **IMG2BRL** / `braille2026`; Pi is `10.42.0.1` | whoever joins the Pi loses internet, so text falls back to Tesseract; `./tools/solenoid.sh wifi client` rejoins saved Wi-Fi |
+
+Run the bridge with `--pi <address>` and the dev server with
+`PI_HOST=<address>:8080` when the Pi is not on the USB link.
+
 ```bash
 npm run build && ./pi/deploy.sh          # ship code + web build to the Pi
 open http://169.254.10.10:8080/app/      # visualizer served by the Pi, live pins
@@ -204,6 +215,7 @@ and an address field if you want to point it somewhere else.
 | `POST /pulse/<n>?ms=150` · `/on/<n>` · `/off/<n>` | one dot |
 | `POST /alloff` | everything down, stop playback |
 | `POST /lock?value=1\|0` | safety latch: while locked every actuation returns 423 |
+| `POST /wifi?mode=ap\|client` | host the IMG2BRL hotspot, or rejoin saved Wi-Fi; `GET /state` reports `wifi` |
 | `POST /braille?text=Hello&cell_ms=900&space_ms=500&gap_ms=120` | play text on the Pi's clock |
 | `POST /braille/stop` | stop |
 | `GET /state` · `GET /encode?text=` | status · cell sequence for a text |

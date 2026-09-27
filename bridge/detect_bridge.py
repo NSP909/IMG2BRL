@@ -436,6 +436,11 @@ def reader_loop():
         if use_cloud:
             res, rerr = read_with_claude(model, frame, box) if VLM_PROVIDER == "anthropic" else read_with_openai(model, frame, box)
             eng = VLM_PROVIDER
+            if rerr and not any(k in rerr.lower() for k in ("api error", "authentication", "rate")):
+                # no internet (e.g. laptop on the Pi's hotspot): read offline this time
+                log(f"{VLM_PROVIDER} unreachable ({rerr[:60]}); reading with Tesseract")
+                res, rerr = read_with_tesseract(frame, box)
+                eng = "tesseract"
         else:
             res, rerr = read_with_tesseract(frame, box)
             eng = "tesseract"

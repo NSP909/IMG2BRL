@@ -14,6 +14,7 @@ HTTP on port 8080 (CORS open, so the visualizer can call it from anywhere):
   POST /on/<n>  /off/<n>          hold / release dot n (auto-off after max_on_ms)
   POST /alloff                    everything down, stop braille playback
   POST /lock?value=1|0            safety latch: while locked, cell/pulse/on/braille return 423
+  POST /wifi?mode=ap|client       host the IMG2BRL hotspot (Pi at 10.42.0.1) or rejoin saved Wi-Fi
   POST /braille?text=Hello&cell_ms=900&space_ms=500&gap_ms=120&caps=1&loop=0
                                   play text as braille, one cell at a time, on the Pi's clock
   POST /braille/stop
@@ -21,7 +22,7 @@ HTTP on port 8080 (CORS open, so the visualizer can call it from anywhere):
 
 Pins and timings live in ~/solenoids.json.
 """
-import json, mimetypes, os, signal, sys, threading, time
+import json, mimetypes, os, re, signal, subprocess, sys, threading, time
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 from urllib.parse import urlparse, parse_qs
 from gpiozero import DigitalOutputDevice
@@ -260,11 +261,48 @@ fetch('/state').then(r=>r.json()).then(render).catch(()=>setConn(false));
 </script></body></html>"""
 
 
+AP_CON = "IMG2BRL-AP"
+
+
+def wifi_info():
+    """Which Wi-Fi mode the Pi is in, from NetworkManager."""
+    try:
+        out = subprocess.run(["nmcli", "-t", "-f", "DEVICE,STATE,CONNECTION", "dev", "status"], capture_output=True, text=True, timeout=5).stdout
+        con = next((l.split(":")[2] for l in out.splitlines() if l.startswith("wlan0:")), "")
+        ip = subprocess.run(["sh", "-c", "ip -4 -o addr show wlan0 | awk '{print $4}' | cut -d/ -f1"], capture_output=True, text=True, timeout=5).stdout.strip()
+        return {"mode": "ap" if con == AP_CON else ("client" if con else "off"), "connection": con, "ip": ip or None, "ap_ssid": "IMG2BRL"}
+    except Exception as e:
+        return {"mode": "unknown", "connection": "", "ip": None, "error": str(e)}
+
+
+def _nm(*argv, timeout=40):
+    r = subprocess.run(["sudo", "nmcli", *argv], capture_output=True, text=True, timeout=timeout)
+    return r.returncode == 0, re.sub(r"\x1b\[[0-9;]*[A-Za-z]|\r", "", (r.stdout or r.stderr)).strip()
+
+
+def wifi_switch(mode):
+    """ap: host the IMG2BRL hotspot; client: rejoin saved networks, highest priority first."""
+    if mode == "ap":
+        ok, msg = _nm("con", "up", AP_CON)
+        log(f"wifi -> ap: {msg[:100]}")
+        return ok
+    _nm("con", "down", AP_CON, timeout=15)
+    out = subprocess.run(["nmcli", "-t", "-f", "NAME,TYPE,AUTOCONNECT-PRIORITY", "con", "show"], capture_output=True, text=True, timeout=10).stdout
+    saved = sorted(((int(p or 0), n) for n, t, p in (l.split(":") for l in out.splitlines() if l.count(":") == 2)
+                    if t == "802-11-wireless" and n != AP_CON), reverse=True)
+    for _, name in saved:
+        ok, msg = _nm("con", "up", name)
+        log(f"wifi -> client {name!r}: {msg[:80]}")
+        if ok:
+            return True
+    return False
+
+
 def state():
     return {"solenoids": [s.state() for s in SOLENOIDS], "mask": current_mask(), "glyph": glyph(current_mask()),
             "pulse_ms": cfg["pulse_ms"], "max_on_ms": cfg["max_on_ms"], "cell_ms": cfg["cell_ms"],
             "space_ms": cfg["space_ms"], "gap_ms": cfg["gap_ms"], "active_high": cfg["active_high"],
-            "pins": cfg["pins"], "locked": LOCKED, "braille": braille_status(), "app": os.path.isfile(os.path.join(cfg["www_dir"], "index.html")),
+            "pins": cfg["pins"], "locked": LOCKED, "braille": braille_status(), "wifi": wifi_info(), "app": os.path.isfile(os.path.join(cfg["www_dir"], "index.html")),
             "log": LOG[-10:]}
 
 
@@ -334,6 +372,12 @@ class Handler(BaseHTTPRequestHandler):
             if parts[0] == "alloff":
                 stop_braille(); all_off(); log("ALL OFF")
                 return self._send(200, state())
+            if parts[0] == "wifi":
+                mode = q.get("mode", [""])[0]
+                if mode not in ("ap", "client"):
+                    return self._send(400, {"error": "mode must be ap or client"})
+                ok = wifi_switch(mode)
+                return self._send(200 if ok else 500, state())
             if parts[0] == "lock":
                 global LOCKED
                 v = q.get("value", ["1"])[0]
