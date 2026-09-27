@@ -38,7 +38,7 @@ ap.add_argument("--interval", type=float, default=0.6, help="seconds between det
 ap.add_argument("--ocr-every", type=int, default=2, help="run OCR every N passes (0 = never)")
 ap.add_argument("--mode", choices=["auto", "manual"], default="auto")
 ap.add_argument("--stable", type=int, default=2, help="auto: passes a label must persist before queueing")
-ap.add_argument("--cooldown", type=float, default=15, help="auto: seconds before the same label may queue again")
+ap.add_argument("--cooldown", type=float, default=5, help="auto: minimum seconds before a label that left and came back may queue again")
 ap.add_argument("--max-queue", type=int, default=8)
 ap.add_argument("--direct", action="store_true", help="play the queue on the Pi from here (no web app needed)")
 ap.add_argument("--cell-ms", type=int, default=900)
@@ -57,6 +57,9 @@ STATE = {
 }
 COOLDOWN = {}          # label -> last queued time
 STABLE = {"label": None, "count": 0}
+PRESENT = {}           # label -> time it (re)entered the view
+ABSENT = {}            # label -> consecutive passes it has been missing
+ABSENT_PASSES = 3      # missing this many passes counts as having left the view
 
 
 def log(msg):
@@ -229,14 +232,28 @@ def detect_loop():
             STATE["jpeg"] = jpeg
             STATE["stats"].update(infer_ms=infer_ms, ocr_ms=ocr_ms or STATE["stats"]["ocr_ms"], passes=passes)
             mode = STATE["mode"]
-        # auto mode: queue a label once it has been seen `stable` passes in a row and is out of cooldown
+        # Track what is in view so a label is queued when it arrives, not continuously while it stays.
+        now = time.time()
+        seen = {d["label"].lower() for d in dets}
+        for lbl in seen:
+            ABSENT[lbl] = 0
+            PRESENT.setdefault(lbl, now)
+        for lbl in list(PRESENT):
+            if lbl not in seen:
+                ABSENT[lbl] = ABSENT.get(lbl, 0) + 1
+                if ABSENT[lbl] >= ABSENT_PASSES:
+                    del PRESENT[lbl]
+        # auto mode: queue the best label once it has been stable for `stable` passes, and only
+        # if it has not been queued since it (re)entered the view and its cooldown has passed.
         label = best["label"].lower() if best else None
         if label == STABLE["label"]:
             STABLE["count"] += 1
         else:
             STABLE["label"], STABLE["count"] = label, 1
         if mode == "auto" and best and STABLE["count"] >= args.stable:
-            if time.time() - COOLDOWN.get(label, 0) > args.cooldown:
+            queued_at = COOLDOWN.get(label, 0)
+            arrived = PRESENT.get(label, now)
+            if arrived > queued_at and now - queued_at > args.cooldown:
                 enqueue(best, "auto")
         time.sleep(max(0.0, args.interval - (infer_ms + ocr_ms) / 1000.0))
 
