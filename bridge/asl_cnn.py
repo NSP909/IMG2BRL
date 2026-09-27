@@ -7,6 +7,7 @@ punpuniacitizen/MediaPipe-ASL-sign-language-recognition v1.1.  See
 
 from __future__ import annotations
 
+import base64
 from collections import deque
 import os
 import time
@@ -201,11 +202,15 @@ class CnnClassifier:
         self.scores = deque(maxlen=SCORE_WINDOW)
         self.smoother = OneEuroFilter()
         self.motion = MotionTracker()
+        self.skeleton_image = None
+        self.predictions = []
 
     def reset(self):
         self.scores.clear()
         self.smoother.reset()
         self.motion.reset()
+        self.skeleton_image = None
+        self.predictions = []
 
     def classify(self, landmarks, frame_shape):
         height, width = frame_shape[:2]
@@ -213,11 +218,20 @@ class CnnClassifier:
         points = self.smoother(points)
         self.motion.update(points)
         image = render_skeleton(normalize_landmarks(points), self.input_size)
+        ok, encoded = cv2.imencode(".png", cv2.cvtColor(image, cv2.COLOR_RGB2BGR))
+        self.skeleton_image = (
+            "data:image/png;base64," + base64.b64encode(encoded).decode("ascii")
+            if ok else None
+        )
         logits = self.session.run([self.output_name], {self.input_name: image.astype(np.float32)[None, ...]})[0][0]
         exponentials = np.exp(logits - logits.max())
         self.scores.append(exponentials / exponentials.sum())
         scores = np.mean(self.scores, axis=0)
         index = int(np.argmax(scores))
+        self.predictions = [
+            {"label": CLASS_NAMES[int(i)].upper(), "confidence": round(float(scores[int(i)]), 3)}
+            for i in np.argsort(scores)[::-1][:3]
+        ]
         letter, confidence = CLASS_NAMES[index], float(scores[index])
         resolved = self.motion.resolve(letter)
         return resolved or letter, confidence, self.motion.is_moving()

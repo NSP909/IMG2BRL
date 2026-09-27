@@ -27,7 +27,8 @@ const QUEUE_GAP_MS = 700;
 /** Shown only until the bridge's first /state response arrives. */
 const DEFAULT_ASL: AslStatus = {
   available: false, classifier: 'knn', label: null, stable_count: 0, stable_needed: 2,
-  last_spoken: null, confidence: 0, moving: false, error: null,
+  last_spoken: null, confidence: 0, moving: false, skeleton_image: null,
+  predictions: [], error: null,
 };
 
 /** `?text=Hello` in the URL plays that text on load; otherwise wait for real input. */

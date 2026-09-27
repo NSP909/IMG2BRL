@@ -218,7 +218,8 @@ STATE = {
     "camera_source": args.camera_source,
     "asl": {"available": False, "classifier": args.asl_classifier, "label": None,
             "stable_count": 0, "stable_needed": ASL.stable_needed, "last_spoken": None,
-            "confidence": 0.0, "moving": False, "error": None},
+            "confidence": 0.0, "moving": False, "skeleton_image": None,
+            "predictions": [], "error": None},
     "rotate": load_rotate(), "frame_size": None,
     "visible": [], "scene": {"diff": 0.0, "changed_at": 0.0, "changes": 0, "pruned": 0},
     # Nearby-voice pathway (opt-in, off at every start): when a person is close to the
@@ -758,7 +759,8 @@ def asl_pass(frame):
             available=s.available, classifier=ASL.classifier, label=s.label,
             stable_count=s.stable_count, stable_needed=ASL.stable_needed,
             last_spoken=s.last_spoken, confidence=round(s.confidence, 3),
-            moving=s.moving, error=s.error,
+            moving=s.moving, skeleton_image=s.skeleton_image,
+            predictions=s.predictions, error=s.error,
         )
     if letter:
         asl_mode.speak(letter)
@@ -1095,7 +1097,8 @@ class Handler(BaseHTTPRequestHandler):
             with LOCK:
                 STATE["camera_mode"] = v
                 if v == "objects":
-                    STATE["asl"].update(label=None, stable_count=0, last_spoken=None)
+                    STATE["asl"].update(label=None, stable_count=0, last_spoken=None,
+                                        skeleton_image=None, predictions=[])
             log(f"camera mode -> {v}")
             return self._json(200, snapshot())
         if u.path == "/asl_classifier":
@@ -1110,7 +1113,8 @@ class Handler(BaseHTTPRequestHandler):
             with LOCK:
                 STATE["asl"].update(available=True, classifier=ASL.classifier, label=None,
                                     stable_count=0, stable_needed=ASL.stable_needed,
-                                    last_spoken=None, confidence=0.0, moving=False, error=None)
+                                    last_spoken=None, confidence=0.0, moving=False,
+                                    skeleton_image=None, predictions=[], error=None)
             log(f"asl classifier -> {v}")
             return self._json(200, snapshot())
         if u.path == "/camera_source":

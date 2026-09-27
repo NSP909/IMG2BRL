@@ -144,6 +144,8 @@ class AslState:
     available: bool = False
     confidence: float = 0.0
     moving: bool = False
+    skeleton_image: Optional[str] = None
+    predictions: list[dict] = field(default_factory=list)
 
 
 class AslRecognizer:
@@ -247,6 +249,8 @@ class AslRecognizer:
         self.state.last_spoken = None
         self.state.confidence = 0.0
         self.state.moving = False
+        self.state.skeleton_image = None
+        self.state.predictions = []
         if self._cnn is not None:
             self._cnn.reset()
 
@@ -283,6 +287,8 @@ class AslRecognizer:
             self.state.label = visible
             self.state.confidence = confidence
             self.state.moving = moving
+            self.state.skeleton_image = self._cnn.skeleton_image if self.classifier == "cnn" else None
+            self.state.predictions = self._cnn.predictions if self.classifier == "cnn" else []
 
             if candidate and candidate == previous:
                 self.state.stable_count += 1

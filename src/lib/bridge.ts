@@ -48,6 +48,10 @@ export type Recognizer = 'camera' | 'sound' | 'both';
 /** Same camera either way: YOLO/EAST/Claude objects+text, or ASL fingerspelling spoken aloud. */
 export type CameraMode = 'objects' | 'asl';
 export type AslClassifier = 'cnn' | 'knn' | 'geometric';
+export interface AslPrediction {
+  label: string;
+  confidence: number;
+}
 /** Which physical camera the bridge reads frames from. */
 export type CameraSource = 'pi' | 'webcam';
 
@@ -63,6 +67,9 @@ export interface AslStatus {
   last_spoken: string | null;
   confidence: number;
   moving: boolean;
+  /** Exact normalized skeleton image seen by the small CNN. */
+  skeleton_image: string | null;
+  predictions: AslPrediction[];
   error: string | null;
 }
 

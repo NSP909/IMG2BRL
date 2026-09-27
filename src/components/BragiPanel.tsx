@@ -103,12 +103,44 @@ export function BragiPanel({ asl, onClassifier, classifierBusy = false }: Props)
         !asl.error && <p className="muted">Loading the hand model…</p>
       ) : (
         <>
-          <div className="bragi__hero">
-            {asl.label ? (
-              <span key={asl.label} className="bragi__char">{asl.label}</span>
-            ) : (
-              <span className="bragi__char bragi__char--idle">Show a letter to the camera</span>
-            )}
+          <div className="bragi__analysis">
+            <div className="bragi__model-view">
+              <span className="eyebrow">AI view · skeleton</span>
+              <div className="bragi__skeleton">
+                {asl.skeleton_image ? (
+                  <img src={asl.skeleton_image} alt="Normalized hand skeleton seen by the ASL model" />
+                ) : (
+                  <span>{asl.classifier === 'cnn' ? 'Waiting for a hand' : 'Available with Small CNN'}</span>
+                )}
+              </div>
+            </div>
+
+            <div className="bragi__reading">
+              <span className="eyebrow">Current prediction</span>
+              <div className="bragi__hero">
+                {asl.label ? (
+                  <span key={asl.label} className="bragi__char">{asl.label}</span>
+                ) : (
+                  <span className="bragi__char bragi__char--idle">Show one letter</span>
+                )}
+              </div>
+
+              <div className="bragi__predictions" aria-label="Top model predictions">
+                {asl.predictions.length > 0 ? asl.predictions.map((prediction, index) => (
+                  <div className="bragi__prediction" key={`${prediction.label}-${index}`}>
+                    <strong>{prediction.label}</strong>
+                    <span className="bragi__score-track">
+                      <i style={{ width: `${Math.round(prediction.confidence * 100)}%` }} />
+                    </span>
+                    <span className="mono">{Math.round(prediction.confidence * 100)}%</span>
+                  </div>
+                )) : (
+                  <span className="small muted">
+                    {asl.classifier === 'cnn' ? 'Top predictions appear here' : 'Top predictions are available with Small CNN'}
+                  </span>
+                )}
+              </div>
+            </div>
           </div>
 
           <div className="conf">
