@@ -21,7 +21,7 @@ export interface Bridge {
   baseUrl: string;
   online: boolean;
   state: BridgeState | null;
-  /** URL of the live annotated MJPEG stream. */
+  /** URL of the live annotated MJPEG stream; changes whenever the bridge comes back, so <img> reconnects. */
   streamUrl: string;
   /** Queue the current best detection. Resolves the queued item, or null if nothing is in view. */
   capture(): Promise<QueueItem | null>;
@@ -41,6 +41,7 @@ export function useBridge(): Bridge {
   const [baseUrl] = useState(loadBridgeUrl);
   const [state, setState] = useState<BridgeState | null>(null);
   const [online, setOnline] = useState(false);
+  const [session, setSession] = useState(0);
   const failures = useRef(0);
 
   useEffect(() => {
@@ -51,7 +52,10 @@ export function useBridge(): Bridge {
       if (s) {
         failures.current = 0;
         setState(s);
-        setOnline(true);
+        setOnline((was) => {
+          if (!was) setSession((n) => n + 1); // (re)connected: give the stream a fresh URL
+          return true;
+        });
       } else if (++failures.current >= 2) {
         setOnline(false);
       }
@@ -115,7 +119,7 @@ export function useBridge(): Bridge {
     baseUrl,
     online,
     state,
-    streamUrl: streamUrl(baseUrl),
+    streamUrl: `${streamUrl(baseUrl)}?s=${session}`,
     capture,
     next,
     setMode,

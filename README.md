@@ -72,8 +72,9 @@ Two seams are designed for replacement:
 
 ## Detection in: Pi camera → laptop → queue → finger
 
-The Pi's camera module streams MJPEG (`camera-stream.service`, tcp 8555).
-A bridge process on the laptop pulls that stream and, twice a second:
+The Pi's camera module streams 720p MJPEG at 30 fps (`camera-stream.service`,
+tcp 8555). A bridge process on the laptop pulls that stream, re-serves it to
+the browser at full rate with the latest boxes drawn on, and, twice a second:
 
 1. **Objects · YOLO26** (`pi/models/yolo26n-seg.pt`, ~40 ms on the GPU),
    filtered to a short list of things you meet at a venue: person, phone,

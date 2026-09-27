@@ -157,6 +157,39 @@ def capture_loop():
         time.sleep(1.0)
 
 
+# ------------------------------------------------------------------ preview (camera-rate, boxes from the last pass)
+PREVIEW_MAX_FPS = 30
+
+
+def draw_boxes(img, dets, best):
+    H, W = img.shape[:2]
+    for d in dets:
+        b = d["box"]; x1, y1 = int(b["x"] * W), int(b["y"] * H); x2, y2 = int((b["x"] + b["w"]) * W), int((b["y"] + b["h"]) * H)
+        col = (60, 220, 60) if d["kind"] == "text" else (255, 180, 40)
+        cv2.rectangle(img, (x1, y1), (x2, y2), col, 3 if best is not None and d["label"] == best["label"] and d["kind"] == best["kind"] else 1)
+        tag = f'{d["label"]} {int(d["confidence"] * 100)}%' if d.get("engine") != "east" else "text?"
+        cv2.putText(img, tag, (x1, max(14, y1 - 6)), cv2.FONT_HERSHEY_SIMPLEX, 0.55, col, 2)
+    return img
+
+
+def preview_loop():
+    """Turns every camera frame into the annotated JPEG the browser streams, at camera rate."""
+    last_at = 0.0
+    while True:
+        with LOCK:
+            frame, at, dets, best, paused = STATE["frame"], STATE["frame_at"], STATE["detections"], STATE["best"], STATE["paused"]
+        if frame is None or at == last_at:
+            time.sleep(1.0 / PREVIEW_MAX_FPS / 2)
+            continue
+        last_at = at
+        img = frame if paused else draw_boxes(frame.copy(), dets, best)
+        ok, buf = cv2.imencode(".jpg", img, [cv2.IMWRITE_JPEG_QUALITY, 72])
+        if ok:
+            with LOCK:
+                STATE["jpeg"] = buf.tobytes()
+                STATE["stats"]["preview_fps"] = STATE["stats"].get("preview_fps", 0.0)
+
+
 # ------------------------------------------------------------------ objects (YOLO, filtered)
 def load_model():
     from ultralytics import YOLO
@@ -447,20 +480,6 @@ def choose_best(dets):
     return None
 
 
-def annotate(frame, dets, best):
-    img = frame.copy()
-    H, W = img.shape[:2]
-    for d in dets:
-        b = d["box"]; x1, y1 = int(b["x"] * W), int(b["y"] * H); x2, y2 = int((b["x"] + b["w"]) * W), int((b["y"] + b["h"]) * H)
-        col = (60, 220, 60) if d["kind"] == "text" else (255, 180, 40)
-        thick = 3 if best is d else 1
-        cv2.rectangle(img, (x1, y1), (x2, y2), col, thick)
-        tag = f'{d["label"]} {int(d["confidence"] * 100)}%' if d.get("engine") != "east" else "text?"
-        cv2.putText(img, tag, (x1, max(14, y1 - 6)), cv2.FONT_HERSHEY_SIMPLEX, 0.55, col, 2)
-    ok, buf = cv2.imencode(".jpg", img, [cv2.IMWRITE_JPEG_QUALITY, 75])
-    return buf.tobytes() if ok else None
-
-
 def enqueue(det, reason):
     with LOCK:
         if len(STATE["queue"]) >= args.max_queue:
@@ -498,19 +517,17 @@ def detect_loop():
             time.sleep(0.2)
             continue
         if paused:
-            ok, buf = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 70])
             with LOCK:
                 STATE["detections"], STATE["best"] = [], None
                 STATE["text"].update(present=False, cells=0, box=None)
-                if ok:
-                    STATE["jpeg"] = buf.tobytes()
             time.sleep(0.3)
             continue
+        small = cv2.resize(frame, (960, int(frame.shape[0] * 960 / frame.shape[1]))) if frame.shape[1] > 960 else frame
         t = time.time()
-        dets = run_yolo(model, frame)
+        dets = run_yolo(model, small)
         infer_ms = int((time.time() - t) * 1000)
         t = time.time()
-        cells, score, box = text_gate(frame)
+        cells, score, box = text_gate(small)
         gate_ms = int((time.time() - t) * 1000)
         present = cells >= args.text_cells
         text_streak = text_streak + 1 if present else 0
@@ -528,11 +545,9 @@ def detect_loop():
         if td:
             dets.insert(0, td)
         best = choose_best(dets)
-        jpeg = annotate(frame, dets, best)
         with LOCK:
             STATE["detections"] = dets
             STATE["best"] = best
-            STATE["jpeg"] = jpeg
             STATE["stats"].update(infer_ms=infer_ms, gate_ms=gate_ms, passes=passes)
             mode = STATE["mode"]
         # object arrival tracking (text is queued by the reader when it comes back)
@@ -647,7 +662,7 @@ class Handler(BaseHTTPRequestHandler):
                         self.wfile.write(b"--frame\r\nContent-Type: image/jpeg\r\nContent-Length: %d\r\n\r\n" % len(jpeg))
                         self.wfile.write(jpeg + b"\r\n")
                         self.wfile.flush()
-                    time.sleep(0.12)
+                    time.sleep(0.01)
             except (BrokenPipeError, ConnectionResetError):
                 return
         return self._json(404, {"error": "unknown path"})
@@ -707,6 +722,7 @@ class Handler(BaseHTTPRequestHandler):
 
 if __name__ == "__main__":
     threading.Thread(target=capture_loop, daemon=True).start()
+    threading.Thread(target=preview_loop, daemon=True).start()
     threading.Thread(target=detect_loop, daemon=True).start()
     threading.Thread(target=reader_loop, daemon=True).start()
     if args.direct:

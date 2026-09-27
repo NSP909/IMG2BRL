@@ -4,7 +4,7 @@ After=multi-user.target
 [Service]
 User=pi
 ExecStartPre=-/usr/bin/pkill -x rpicam-vid
-ExecStart=/usr/bin/rpicam-vid -t 0 --codec mjpeg --width 1280 --height 720 --framerate 10 --quality 80 --listen -o tcp://0.0.0.0:8555 -n
+ExecStart=/usr/bin/rpicam-vid -t 0 --codec mjpeg --width 1280 --height 720 --framerate 30 --quality 80 --listen -o tcp://0.0.0.0:8555 -n
 Restart=always
 RestartSec=1
 [Install]
