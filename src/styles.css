@@ -589,6 +589,7 @@ input[type='range'] { width: 100%; accent-color: var(--ink); margin: 0; }
 .tabs { display: inline-flex; border: 1px solid var(--line); border-radius: 999px; padding: 3px; background: var(--surface); }
 .tab { border: 0; background: transparent; color: var(--ink-2); font: inherit; font-size: 13px; padding: 0 12px; height: 24px; border-radius: 999px; cursor: pointer; }
 .tab.is-active { background: var(--ink); color: #fff; }
+.tab:disabled { opacity: 0.4; cursor: not-allowed; }
 .btn--stop { background: #b3261e; color: #fff; border-color: #b3261e; height: 32px; padding: 0 12px; font-size: 13px; }
 .btn--stop:hover { background: #8f1d17; border-color: #8f1d17; }
 
