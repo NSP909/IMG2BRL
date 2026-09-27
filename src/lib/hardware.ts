@@ -14,6 +14,8 @@ export interface HardwareStatus {
 }
 
 export const DEFAULT_BASE_URL = 'http://169.254.10.10:8080';
+/** The Vite dev server forwards /pi/* to the Pi (see vite.config.ts). */
+export const DEV_PROXY_URL = '/pi';
 const KEY_URL = 'hardware.baseUrl';
 const KEY_ENABLED = 'hardware.enabled';
 
@@ -24,11 +26,15 @@ export function servedFromPi(): boolean {
 
 export function loadBaseUrl(): string {
   if (servedFromPi()) return location.origin;
+  let stored: string | null = null;
   try {
-    return localStorage.getItem(KEY_URL) || DEFAULT_BASE_URL;
+    stored = localStorage.getItem(KEY_URL);
   } catch {
-    return DEFAULT_BASE_URL;
+    /* ignore */
   }
+  // In development prefer the dev-server proxy unless the user typed a custom address.
+  if (import.meta.env.DEV && (!stored || stored === DEFAULT_BASE_URL)) return DEV_PROXY_URL;
+  return stored || DEFAULT_BASE_URL;
 }
 
 export function saveBaseUrl(url: string) {
@@ -58,13 +64,15 @@ export function saveEnabled(on: boolean) {
 
 export function normaliseBaseUrl(input: string): string {
   let s = input.trim().replace(/\/+$/, '');
-  if (!s) return DEFAULT_BASE_URL;
+  if (!s) return import.meta.env.DEV ? DEV_PROXY_URL : DEFAULT_BASE_URL;
+  if (s.startsWith('/')) return s; // a same-origin proxy path such as /pi
   if (!/^https?:\/\//i.test(s)) s = 'http://' + s;
   if (!/:\d+$/.test(s)) s += ':8080';
   return s;
 }
 
 export function hostOf(baseUrl: string): string {
+  if (baseUrl.startsWith('/')) return `${location.host}${baseUrl} → Pi`;
   try {
     return new URL(baseUrl).host;
   } catch {
