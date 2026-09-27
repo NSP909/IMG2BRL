@@ -43,6 +43,7 @@ export function Viewfinder({ detection, scanning, onCapture, live }: Props) {
 
         {live
           ? live.detections.map((d, i) => {
+              if (!d.box) return null;
               const isBest = live.best !== null && d.label === live.best.label && d.kind === live.best.kind;
               return (
                 <div

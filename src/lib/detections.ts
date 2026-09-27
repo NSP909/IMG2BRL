@@ -4,8 +4,8 @@
  * shape of `Detection` is the contract the rest of the UI relies on.
  */
 
-export type DetectionKind = 'object' | 'text';
-export type DetectionSource = 'simulated' | 'manual' | 'camera';
+export type DetectionKind = 'object' | 'text' | 'speech';
+export type DetectionSource = 'simulated' | 'manual' | 'camera' | 'microphone';
 
 /** Normalised bounding box, all values 0–1 relative to the frame. */
 export interface Box {
@@ -19,7 +19,7 @@ export interface DetectionSample {
   kind: DetectionKind;
   label: string;
   confidence: number;
-  box: Box;
+  box: Box | null;
 }
 
 export interface Detection extends DetectionSample {
@@ -53,7 +53,15 @@ export function manualDetection(text: string): Detection {
   );
 }
 
-/** A detection produced by the camera bridge (already carries its own id and time). */
-export function cameraDetection(item: { id: string; at: number; kind: DetectionKind; label: string; confidence: number; box: Box }): Detection {
-  return { id: item.id, source: 'camera', at: item.at, kind: item.kind, label: item.label, confidence: item.confidence, box: item.box };
+/** A result produced by the bridge (already carries its own id and time). */
+export function bridgeDetection(item: {
+  id: string;
+  at: number;
+  kind: DetectionKind;
+  label: string;
+  confidence: number;
+  box: Box | null;
+  source: 'camera' | 'microphone';
+}): Detection {
+  return { id: item.id, source: item.source, at: item.at, kind: item.kind, label: item.label, confidence: item.confidence, box: item.box };
 }

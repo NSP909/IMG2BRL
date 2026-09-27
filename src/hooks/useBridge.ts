@@ -32,7 +32,7 @@ export interface Bridge {
   setEngine(engine: Engine): void;
   /** Run one vision-model pass now. */
   analyze(): void;
-  /** Camera lock. */
+  /** Pause the active camera or microphone input. */
   paused: boolean;
   setPaused(paused: boolean): void;
 }

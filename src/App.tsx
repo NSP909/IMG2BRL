@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { dotsToMask, encodeText } from './lib/braille';
-import { SAMPLES, cameraDetection, makeDetection, manualDetection, type Detection, type DetectionKind } from './lib/detections';
+import { SAMPLES, bridgeDetection, makeDetection, manualDetection, type Detection, type DetectionKind } from './lib/detections';
 import { useCellStream } from './hooks/useCellStream';
 import { useHardware } from './hooks/useHardware';
 import { useBridge } from './hooks/useBridge';
@@ -14,6 +14,7 @@ import { CellHero } from './components/CellHero';
 import { SequenceStrip } from './components/SequenceStrip';
 import { PinPanel, type Frame } from './components/PinPanel';
 import { SettingsCard, type Settings } from './components/SettingsCard';
+import { SoundPanel } from './components/SoundPanel';
 
 /** How long the simulated detector "looks" before it answers. */
 const SCAN_MS = 1400;
@@ -21,10 +22,10 @@ const FRAME_LOG_SIZE = 6;
 /** Pause between one queued message finishing and the next starting. */
 const QUEUE_GAP_MS = 700;
 
-/** `?text=Hello` in the URL plays that text on load; otherwise the first sample detection. */
-function initialDetection(): Detection {
+/** `?text=Hello` in the URL plays that text on load; otherwise wait for real input. */
+function initialDetection(): Detection | null {
   const text = new URLSearchParams(window.location.search).get('text')?.trim();
-  return text ? manualDetection(text) : makeDetection(SAMPLES[0], 'simulated');
+  return text ? manualDetection(text) : null;
 }
 
 export default function App() {
@@ -34,14 +35,14 @@ export default function App() {
     loop: false,
     capitalIndicators: true,
   });
-  const [detection, setDetection] = useState<Detection>(initialDetection);
+  const [detection, setDetection] = useState<Detection | null>(initialDetection);
   const [scanning, setScanning] = useState(false);
-  const sampleCursor = useRef(1);
+  const sampleCursor = useRef(0);
   const scanTimer = useRef<number | null>(null);
 
   // The real finger module: a Pi driving six solenoids, one per dot.
   const hardware = useHardware();
-  // The camera pipeline: Pi camera -> YOLO + OCR on the laptop -> queue.
+  // The laptop recognition bridge: camera vision or name-triggered sound -> queue.
   const bridge = useBridge();
 
   // Two screens: the finger demo, and a lab for testing the camera models alone (#lab).
@@ -59,7 +60,7 @@ export default function App() {
   // Detection → cells → timed stream. The browser is the clock; every cell
   // it shows is also sent to the Pi, so the screen and the finger agree.
   const cells = useMemo(
-    () => encodeText(detection.label, { capitalIndicators: settings.capitalIndicators }),
+    () => encodeText(detection?.label ?? '', { capitalIndicators: settings.capitalIndicators }),
     [detection, settings.capitalIndicators],
   );
   const stream = useCellStream(cells, {
@@ -91,7 +92,7 @@ export default function App() {
 
   const sendText = useCallback((text: string) => setDetection(manualDetection(text)), []);
 
-  // Queue consumer: when nothing is playing, pull the next camera detection.
+  // Queue consumer: when nothing is playing, pull the next recognition result.
   const queueLen = bridge.state?.queue.length ?? 0;
   const idle = !scanning && !stream.playing && (stream.total === 0 || stream.finished || stream.index < 0);
   useEffect(() => {
@@ -99,7 +100,7 @@ export default function App() {
     let cancelled = false;
     const timer = window.setTimeout(async () => {
       const item = await bridgeNext();
-      if (!cancelled && item) setDetection(cameraDetection(item));
+      if (!cancelled && item) setDetection(bridgeDetection(item));
     }, QUEUE_GAP_MS);
     return () => {
       cancelled = true;
@@ -113,7 +114,7 @@ export default function App() {
   const lastFrameKey = useRef('');
   const { sendCell, allOff, live } = hardware;
   useEffect(() => {
-    const key = `${detection.id}:${stream.index}`;
+    const key = `${detection?.id ?? 'idle'}:${stream.index}`;
     if (lastFrameKey.current === key) return;
     lastFrameKey.current = key;
     frameSeq.current += 1;
@@ -128,7 +129,7 @@ export default function App() {
     setFrames((prev) => [frame, ...prev].slice(0, FRAME_LOG_SIZE));
     if (stream.current) sendCell(mask, stream.holdMs);
     else allOff();
-  }, [detection.id, stream.index, stream.current, stream.holdMs, sendCell, allOff, live]);
+  }, [detection?.id, stream.index, stream.current, stream.holdMs, sendCell, allOff, live]);
 
   // Pausing drops the pins; stepping while paused raises them again above.
   useEffect(() => {
@@ -160,7 +161,7 @@ export default function App() {
 
   // Play a label on the finger right away (used by the lab screen).
   const sendNow = useCallback((label: string, kind: DetectionKind) => {
-    setDetection(cameraDetection({ id: `lab-${Date.now()}`, at: Date.now(), kind, label, confidence: 1, box: { x: 0.14, y: 0.4, w: 0.72, h: 0.2 } }));
+    setDetection(bridgeDetection({ id: `lab-${Date.now()}`, at: Date.now(), kind, label, confidence: 1, box: null, source: kind === 'speech' ? 'microphone' : 'camera' }));
   }, []);
 
   const status: Status = scanning
@@ -173,8 +174,9 @@ export default function App() {
           ? 'paused'
           : 'idle';
 
+  const soundMode = bridge.state?.recognizer === 'sound';
   const liveFeed: LiveFeed | null =
-    bridge.online && bridge.state
+    bridge.online && bridge.state && !soundMode
       ? {
           streamUrl: bridge.streamUrl,
           cameraOk: bridge.state.camera_ok,
@@ -183,7 +185,7 @@ export default function App() {
           stats: bridge.state.stats,
         }
       : null;
-  const nowPlaying = detection.source === 'camera' && stream.index >= 0 && !stream.finished ? detection.label : null;
+  const nowPlaying = detection && (detection.source === 'camera' || detection.source === 'microphone') && stream.index >= 0 && !stream.finished ? detection.label : null;
 
   return (
     <div className="app">
@@ -198,16 +200,21 @@ export default function App() {
         onStop={stop}
         pinsLocked={hardware.locked}
         onLockPins={lockPins}
-        cameraPaused={bridge.paused}
-        onPauseCamera={bridge.setPaused}
+        recognizer={bridge.state?.recognizer ?? 'camera'}
+        inputPaused={bridge.paused}
+        onPauseInput={bridge.setPaused}
       />
 
       {view === 'lab' ? (
-        <LabView bridge={bridge} onSend={sendNow} nowPlaying={stream.index >= 0 && !stream.finished ? detection.label : null} />
+        <LabView bridge={bridge} onSend={sendNow} nowPlaying={detection && stream.index >= 0 && !stream.finished ? detection.label : null} />
       ) : (
       <main className="layout">
         <div className="col" aria-label="Input">
-          <Viewfinder detection={scanning ? null : detection} scanning={scanning} onCapture={capture} live={liveFeed} />
+          {soundMode ? (
+            <SoundPanel bridge={bridge} />
+          ) : (
+            <Viewfinder detection={scanning ? null : detection} scanning={scanning} onCapture={capture} live={liveFeed} />
+          )}
           <DetectionCard detection={detection} cellCount={cells.length} />
           <QueueCard bridge={bridge} nowPlaying={nowPlaying} />
           <ComposeCard onSend={sendText} disabled={scanning} />
@@ -215,7 +222,7 @@ export default function App() {
 
         <div className="col" aria-label="Output">
           <CellHero stream={stream} />
-          <SequenceStrip text={detection.label} cells={cells} index={stream.index} onSelect={stream.seek} />
+          <SequenceStrip text={detection?.label ?? ''} cells={cells} index={stream.index} onSelect={stream.seek} />
         </div>
 
         <div className="bottom">
@@ -228,7 +235,7 @@ export default function App() {
       <footer className="foot small muted">
         Uncontracted braille, one 3 × 2 cell at a time. Pin numbering follows the standard cell: 1–3 down the left column, 4–6 down the right.
         {hardware.live ? ` Live on the Pi at ${hardware.host}.` : ' Hardware offline: simulating.'}
-        {bridge.online ? ' Camera bridge connected.' : ''}
+        {bridge.online ? ` ${soundMode ? 'Sound' : 'Camera'} bridge connected.` : ''}
       </footer>
     </div>
   );

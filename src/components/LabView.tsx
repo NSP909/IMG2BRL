@@ -2,6 +2,7 @@ import type { Bridge } from '../hooks/useBridge';
 import type { BridgeDetection, Engine } from '../lib/bridge';
 import type { DetectionKind } from '../lib/detections';
 import { Viewfinder, type LiveFeed } from './Viewfinder';
+import { SoundPanel } from './SoundPanel';
 
 interface Props {
   bridge: Bridge;
@@ -23,6 +24,7 @@ function providerName(p: 'anthropic' | 'openai' | null | undefined) {
 /** A screen for testing the camera, the object model and text reading on their own. */
 export function LabView({ bridge, onSend, nowPlaying }: Props) {
   const s = bridge.state;
+  const soundMode = s?.recognizer === 'sound';
   const live: LiveFeed | null =
     bridge.online && s ? { streamUrl: bridge.streamUrl, cameraOk: s.camera_ok, detections: s.detections, best: s.best, stats: s.stats } : null;
   const yolo = (s?.detections ?? []).filter((d) => !d.engine).sort((a, b) => b.confidence - a.confidence);
@@ -30,6 +32,23 @@ export function LabView({ bridge, onSend, nowPlaying }: Props) {
   const gate = s?.text;
   const best = s?.best ?? null;
   const cloud = read?.provider !== null && read?.model !== null;
+
+  if (soundMode) {
+    return (
+      <main className="layout lab">
+        <div className="col" aria-label="Microphone">
+          <SoundPanel bridge={bridge} />
+          {nowPlaying && <p className="small muted">Now on the finger: <b>{nowPlaying}</b></p>}
+        </div>
+        <div className="col" aria-label="Sound diagnostics">
+          <section className="card" aria-label="Bridge log">
+            <div className="card__head"><span className="eyebrow">Bridge log</span></div>
+            <pre className="lab__log mono small muted">{s.log.slice().reverse().join('\n') || '—'}</pre>
+          </section>
+        </div>
+      </main>
+    );
+  }
 
   return (
     <main className="layout lab">

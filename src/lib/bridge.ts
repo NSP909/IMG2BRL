@@ -1,7 +1,7 @@
 /**
- * Client for the detection bridge (bridge/detect_bridge.py): the laptop
- * process that reads the Pi camera, runs YOLO + OCR, and keeps the queue
- * of things to send to the finger.
+ * Client for the recognition bridge (bridge/detect_bridge.py): the laptop
+ * process that runs either camera vision or name-triggered cloud speech
+ * recognition and keeps the queue of things to send to the finger.
  */
 import type { Box, DetectionKind } from './detections';
 
@@ -9,7 +9,7 @@ export interface BridgeDetection {
   kind: DetectionKind;
   label: string;
   confidence: number;
-  box: Box;
+  box: Box | null;
   /** Who produced it: yolo (default), the text gate ('east', not a candidate), or a reader. */
   engine?: 'east' | 'anthropic' | 'openai' | 'tesseract' | 'vlm';
 }
@@ -17,7 +17,7 @@ export interface BridgeDetection {
 export interface QueueItem extends BridgeDetection {
   id: string;
   at: number;
-  source: 'camera';
+  source: 'camera' | 'microphone';
 }
 
 export interface BridgeStats {
@@ -30,6 +30,30 @@ export interface BridgeStats {
 }
 
 export type Engine = 'vlm' | 'tesseract' | 'none';
+export type Recognizer = 'camera' | 'sound';
+
+export type SoundWorkerState = 'off' | 'starting' | 'loading' | 'listening' | 'speech' | 'transcribing' | 'paused' | 'error' | 'stopped';
+
+export interface SoundStatus {
+  available: boolean;
+  device: string | null;
+  sample_rate: number | null;
+  listening: boolean;
+  paused: boolean;
+  state: SoundWorkerState;
+  level_dbfs: number;
+  vad_probability: number;
+  wake_name: string | null;
+  aliases: string[];
+  model: string;
+  latency_ms: number;
+  accepted_count: number;
+  discarded_count: number;
+  dropped_count: number;
+  /** Only the most recent accepted utterance; rejected text is never exposed. */
+  last_text: string;
+  error: string | null;
+}
 
 /** The EAST text-presence gate. */
 export interface TextGate {
@@ -60,8 +84,10 @@ export interface ReadResult {
 }
 
 export interface BridgeState {
+  recognizer: Recognizer;
+  sound: SoundStatus;
   engine: Engine;
-  /** Camera lock: no detection, no reads, no queueing while true. */
+  /** Active input lock: pauses the camera or microphone worker. */
   paused: boolean;
   text: TextGate;
   read: ReadResult;

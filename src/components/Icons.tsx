@@ -45,6 +45,12 @@ export const CameraIcon = () => (
     <circle cx="8" cy="8.8" r="2.2" />
   </svg>
 );
+export const MicIcon = () => (
+  <svg {...base}>
+    <rect x="5.3" y="2" width="5.4" height="8.2" rx="2.7" />
+    <path d="M3.5 7.7a4.5 4.5 0 0 0 9 0M8 12.2V14M5.8 14h4.4" />
+  </svg>
+);
 export const ScanIcon = () => (
   <svg {...base}>
     <path d="M2.5 5.5v-3h3M10.5 2.5h3v3M13.5 10.5v3h-3M5.5 13.5h-3v-3" />
