@@ -47,6 +47,12 @@ export type Engine = 'vlm' | 'tesseract' | 'none';
 export type Recognizer = 'camera' | 'sound' | 'both';
 /** Same camera either way: YOLO/EAST/Claude objects+text, or ASL fingerspelling spoken aloud. */
 export type CameraMode = 'objects' | 'asl';
+/** Bragi's letter model: the skeleton CNN (default), the personal KNN, or the geometric rules. */
+export type AslClassifier = 'cnn' | 'knn' | 'geometric';
+export interface AslPrediction {
+  label: string;
+  confidence: number;
+}
 /** Which physical camera the bridge reads frames from. */
 export type CameraSource = 'pi' | 'webcam';
 
@@ -55,13 +61,64 @@ export type CameraSource = 'pi' | 'webcam';
  * everything else here -- it never enters the braille queue. */
 export interface AslStatus {
   available: boolean;
-  classifier: 'knn' | 'geometric';
+  classifier: AslClassifier;
   label: string | null;
   stable_count: number;
   stable_needed: number;
-  last_spoken: string | null;
+  /** The CNN's smoothed confidence in `label` (always 1 for the KNN and rules). */
+  confidence: number;
+  /** The hand is moving: the CNN won't count a letter mid-motion (it's also how it reads J and Z). */
+  moving: boolean;
+  /** The 21 hand points in the displayed (upright) frame, 0-1, or null with no hand. */
+  hand: [number, number][] | null;
+  /** Exact normalized skeleton image seen by the small CNN (PNG data URL). */
+  skeleton_image: string | null;
+  /** Top guesses, best first. */
+  predictions: AslPrediction[];
+  /** Last sign confirmed: a letter, or "SPACE". */
+  last_letter: string | null;
+  error: string | null;
+  hand_visible: boolean;
+  /** Letters since the last SPACE: the word being spelled. */
+  word_letters: string[];
+  /** Words decoded and spoken this session, oldest first. */
+  words: AslWord[];
+  /** A finished word is being sent to Jev right now. */
+  decoding: boolean;
+  /** A Jev (TypeSafe) key is configured; without one, words fall back to the local dictionary. */
+  jev: boolean;
+  /** The CNN's SPACE output is being retrained from the recorded Space samples. */
+  cnn_training: boolean;
+  /** Outcome of the last retrain (held-out accuracy), or null. */
+  cnn_train_result: string | null;
+  /** Which camera's sample set a recording goes into. */
+  record_into: 'pi' | 'laptop';
+  laptop_counts: Record<string, number>;
+  /** Letter currently being recorded for the KNN set, or null. */
+  recording: string | null;
+  record_progress: number;
+  record_target: number;
+  /** Which recorded samples the KNN matches against. */
+  sample_set: AslSampleSet;
+  /** Samples recorded on this rig's own camera, per letter. */
+  pi_counts: Record<string, number>;
+}
+
+export type AslSampleSet = 'laptop' | 'pi' | 'both';
+
+/** One fingerspelled word: what the camera caught, and what was spoken. */
+export interface AslWord {
+  raw: string;
+  word: string;
+  /** Who picked the word: Jev, the local dictionary (Jev unreachable), or nobody (raw letters). */
+  source: 'jev' | 'local' | 'raw';
+  confidence: number;
+  candidates: string[];
+  ms: number;
   error: string | null;
 }
+
+export type AslWordAction = 'finish' | 'backspace' | 'clear' | 'reset';
 
 export type SoundWorkerState = 'off' | 'starting' | 'loading' | 'listening' | 'speech' | 'transcribing' | 'paused' | 'error' | 'stopped';
 
@@ -129,6 +186,8 @@ export interface BridgeState {
   camera_source: CameraSource;
   /** True when --camera pinned the source at bridge startup (a testing-only override); the toggle is disabled. */
   camera_source_fixed: boolean;
+  /** Who delivered a frame in the last 2 s: the bridge's own capture (Pi), a browser tab, or nobody. */
+  camera_feed: 'bridge' | 'browser' | 'none';
   asl: AslStatus;
   sound: SoundStatus;
   engine: Engine;
@@ -254,6 +313,40 @@ export function bridgeSetCameraMode(baseUrl: string, mode: CameraMode): Promise<
   return post<BridgeState>(baseUrl, `/camera_mode?value=${mode}`);
 }
 
+/** Record `count` hand samples of one letter from the live feed into the
+ * bridge's own sample set (bridge/models/asl_samples_pi.json). */
+export function bridgeAslRecord(baseUrl: string, letter: string, count: number): Promise<BridgeState> {
+  return post<BridgeState>(baseUrl, `/asl_record?letter=${encodeURIComponent(letter)}&count=${count}`);
+}
+
+/** Finish (decode + speak), backspace, or clear the word being spelled; reset also clears the spoken sentence. */
+export function bridgeAslWord(baseUrl: string, action: AslWordAction): Promise<BridgeState> {
+  return post<BridgeState>(baseUrl, `/asl_word?action=${action}`);
+}
+
+/** Retrain the CNN's SPACE output from the recorded Space samples (runs in the background). */
+export function bridgeAslTrainSpace(baseUrl: string): Promise<BridgeState> {
+  return post<BridgeState>(baseUrl, '/asl_train_space');
+}
+
+export function bridgeAslRecordCancel(baseUrl: string): Promise<BridgeState> {
+  return post<BridgeState>(baseUrl, '/asl_record_cancel');
+}
+
+export function bridgeAslSetSampleSet(baseUrl: string, set: AslSampleSet): Promise<BridgeState> {
+  return post<BridgeState>(baseUrl, `/asl_sample_set?value=${set}`);
+}
+
+/** Drop recorded samples for one letter, or every letter when omitted. */
+export function bridgeAslRecordClear(baseUrl: string, letter?: string): Promise<BridgeState> {
+  return post<BridgeState>(baseUrl, `/asl_record_clear${letter ? `?letter=${encodeURIComponent(letter)}` : ''}`);
+}
+
+/** Switch Bragi's letter model live. If the new one can't load, the old one stays active. */
+export function bridgeSetAslClassifier(baseUrl: string, classifier: AslClassifier): Promise<BridgeState> {
+  return post<BridgeState>(baseUrl, `/asl_classifier?value=${classifier}`);
+}
+
 /** Switch which physical camera capture_loop() reads from: the Pi's own, or
  * this laptop's webcam. Rejects if --camera pinned the source at startup. */
 export function bridgeSetCameraSource(baseUrl: string, source: CameraSource): Promise<BridgeState> {
@@ -293,5 +386,21 @@ export async function bridgeSendCameraFrame(baseUrl: string, blob: Blob): Promis
     return res.ok;
   } catch {
     return false;
+  }
+}
+
+/** Bragi's live hand view: polled much faster than /state, so it's kept tiny. */
+export type AslHand = Pick<AslStatus, 'hand' | 'skeleton_image' | 'predictions' | 'label' | 'confidence' | 'moving' | 'classifier'>;
+
+export async function fetchAslHand(baseUrl: string, timeoutMs = 800): Promise<AslHand | null> {
+  const ctrl = new AbortController();
+  const timer = window.setTimeout(() => ctrl.abort(), timeoutMs);
+  try {
+    const res = await fetch(`${baseUrl}/asl_hand`, { signal: ctrl.signal, cache: 'no-store' });
+    return res.ok ? ((await res.json()) as AslHand) : null;
+  } catch {
+    return null;
+  } finally {
+    window.clearTimeout(timer);
   }
 }

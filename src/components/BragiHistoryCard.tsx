@@ -1,30 +1,42 @@
+import type { AslWord } from '../lib/bridge';
+
 interface Props {
-  /** Letters spoken so far this session, oldest first. Reset with onClear. */
-  history: string[];
-  onClear(): void;
+  words: AslWord[];
+  decoding: boolean;
+  onReset(): void;
 }
 
-/** The running transcript, big enough for a bystander to read at a glance,
- * plus the letter-by-letter chips underneath for a sense of pace. */
-export function BragiHistoryCard({ history, onClear }: Props) {
+const SOURCE: Record<AslWord['source'], string> = { jev: 'Jev', local: 'dictionary', raw: 'as signed' };
+
+/** The sentence so far, big enough to read at a glance, and how each word got there. */
+export function BragiHistoryCard({ words, decoding, onReset }: Props) {
+  const recent = words.slice(-6).reverse();
   return (
     <section className="card" aria-label="Spoken this session">
       <div className="card__head">
         <span className="eyebrow">Spoken this session</span>
-        <button type="button" className="btn" onClick={onClear} disabled={history.length === 0}>
-          Clear
-        </button>
+        <button type="button" className="btn" onClick={onReset} disabled={!words.length}>Clear</button>
       </div>
-      {history.length === 0 ? (
-        <p className="muted">Nothing spoken yet. Hold a letter shape steady.</p>
+      {words.length === 0 && !decoding ? (
+        <p className="muted">Nothing spoken yet. Spell a word, then make the space sign.</p>
       ) : (
         <>
-          <p className="bragi__transcript">{history.join('')}</p>
-          <div className="bragi__history">
-            {history.map((letter, i) => (
-              <span key={i} className="chip chip--speech">{letter}</span>
+          <p className="bragi__transcript">
+            {words.map((w) => w.word).join(' ')}
+            {decoding && <span className="bragi__pending"> …</span>}
+          </p>
+          <ul className="bragi__words">
+            {recent.map((w, i) => (
+              <li key={`${w.raw}-${words.length - i}`}>
+                <span className="mono muted">{w.raw}</span>
+                <span className="muted">→</span>
+                <b>{w.word}</b>
+                <span className="small muted">
+                  {SOURCE[w.source]}{w.source === 'jev' ? ` ${Math.round(w.confidence * 100)}%` : ''} · {w.ms} ms
+                </span>
+              </li>
             ))}
-          </div>
+          </ul>
         </>
       )}
     </section>

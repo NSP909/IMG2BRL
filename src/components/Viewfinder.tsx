@@ -1,8 +1,10 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { Detection } from '../lib/detections';
 import type { BridgeDetection, BridgeStats } from '../lib/bridge';
 import { useCamera } from '../hooks/useCamera';
 import { CameraIcon, ScanIcon } from './Icons';
+import { HandSkeleton } from './HandSkeleton';
+import { useSmoothedPoints } from '../hooks/useAslHand';
 
 /** How often to POST a captured frame to the bridge while browser-fed. */
 const CAPTURE_MS = 350;
@@ -35,9 +37,13 @@ interface Props {
    * attach the OS request to), so the browser tab does it instead. */
   browserFeedActive?: boolean;
   onFrame?: (blob: Blob) => void;
+  /** How often to send a browser frame. Bragi's CNN smooths over frames and reads J/Z from motion, so it wants them faster. */
+  captureMs?: number;
+  /** Bragi: the 21 hand points (0-1, upright displayed frame), drawn over the feed like the CNN sees them. */
+  hand?: [number, number][] | null;
 }
 
-export function Viewfinder({ detection, scanning, onCapture, live, aslActive, browserFeedActive, onFrame }: Props) {
+export function Viewfinder({ detection, scanning, onCapture, live, aslActive, browserFeedActive, onFrame, captureMs = CAPTURE_MS, hand }: Props) {
   const cam = useCamera();
   const webcam = cam.state === 'on';
   // A real detection feed exists whenever the bridge has state, regardless of
@@ -46,6 +52,12 @@ export function Viewfinder({ detection, scanning, onCapture, live, aslActive, br
   const hasFeed = Boolean(live);
   const box = detection?.box;
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  // The browser video's real shape, so the frame (and the hand overlay drawn
+  // in its percentages) matches it instead of cropping to 4:3.
+  const [videoSize, setVideoSize] = useState<[number, number] | null>(null);
+  const bridgeView = Boolean(live && !browserFeedActive);
+  const view: [number, number] | null = bridgeView ? live?.frameSize ?? null : videoSize;
+  const smoothHand = useSmoothedPoints(hand ?? null);
 
   const { start: camStart } = cam;
   useEffect(() => {
@@ -67,20 +79,27 @@ export function Viewfinder({ detection, scanning, onCapture, live, aslActive, br
       canvas.height = video.videoHeight;
       ctx.drawImage(video, 0, 0);
       canvas.toBlob((blob) => { if (blob) onFrameRef.current?.(blob); }, 'image/jpeg', 0.85);
-    }, CAPTURE_MS);
+    }, captureMs);
     return () => window.clearInterval(id);
-  }, [browserFeedActive, cam.state, cam.videoRef]);
+  }, [browserFeedActive, cam.state, cam.videoRef, captureMs]);
 
   return (
     <section className="card viewfinder" aria-label="Camera">
       <div
         className={`vf__frame ${hasFeed || webcam ? 'vf__frame--live' : ''} ${!browserFeedActive && live?.frameSize && live.frameSize[1] > live.frameSize[0] ? 'vf__frame--portrait' : ''}`}
-        style={!browserFeedActive && live?.frameSize ? { aspectRatio: `${live.frameSize[0]} / ${live.frameSize[1]}` } : undefined}
+        style={view ? { aspectRatio: `${view[0]} / ${view[1]}` } : undefined}
       >
         {live && !browserFeedActive ? (
           <img className="vf__video" src={live.streamUrl} alt="Live view from the bridge camera" />
         ) : (
-          <video ref={cam.videoRef} className={`vf__video ${aslActive ? 'vf__video--mirror' : ''}`} muted playsInline hidden={!webcam} />
+          <video
+            ref={cam.videoRef}
+            className={`vf__video ${aslActive ? 'vf__video--mirror' : ''}`}
+            muted
+            playsInline
+            hidden={!webcam}
+            onLoadedMetadata={(e) => setVideoSize([e.currentTarget.videoWidth, e.currentTarget.videoHeight])}
+          />
         )}
         <canvas ref={canvasRef} hidden />
 
@@ -90,6 +109,17 @@ export function Viewfinder({ detection, scanning, onCapture, live, aslActive, br
         <span className="vf__corner vf__corner--br" />
 
         {scanning && <div className="vf__scan" aria-hidden />}
+
+        {smoothHand && view && (
+          <svg
+            className={`vf__hand ${aslActive && !bridgeView ? 'vf__video--mirror' : ''}`}
+            viewBox={`0 0 ${view[0]} ${view[1]}`}
+            aria-hidden
+          >
+            <HandFocus points={smoothHand} w={view[0]} h={view[1]} />
+            <HandSkeleton points={smoothHand} w={view[0]} h={view[1]} size={0.011} />
+          </svg>
+        )}
 
         {hasFeed
           ? live!.detections.map((d, i) => {
@@ -166,5 +196,26 @@ export function Viewfinder({ detection, scanning, onCapture, live, aslActive, br
       </div>
       )}
     </section>
+  );
+}
+
+/** The box around the hand that the CNN crops to (its "AI focus"). */
+function HandFocus({ points, w, h }: { points: [number, number][]; w: number; h: number }) {
+  const xs = points.map((p) => p[0] * w);
+  const ys = points.map((p) => p[1] * h);
+  const pad = 0.12 * Math.max(Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys));
+  const x = Math.min(...xs) - pad;
+  const y = Math.min(...ys) - pad;
+  return (
+    <rect
+      x={x}
+      y={y}
+      width={Math.max(...xs) - Math.min(...xs) + 2 * pad}
+      height={Math.max(...ys) - Math.min(...ys) + 2 * pad}
+      fill="none"
+      stroke="rgb(74,144,226)"
+      strokeWidth={Math.min(w, h) * 0.004}
+      rx={Math.min(w, h) * 0.008}
+    />
   );
 }

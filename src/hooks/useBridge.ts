@@ -1,10 +1,17 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   bridgeAnalyze,
+  bridgeAslRecord,
+  bridgeAslRecordCancel,
+  bridgeAslRecordClear,
+  bridgeAslSetSampleSet,
+  bridgeAslWord,
+  bridgeAslTrainSpace,
   bridgeCapture,
   bridgeClear,
   bridgeNext,
   bridgeSetCameraMode,
+  bridgeSetAslClassifier,
   bridgeSetCameraSource,
   bridgeSetEngine,
   bridgeSetMode,
@@ -15,6 +22,9 @@ import {
   fetchBridgeState,
   loadBridgeUrl,
   streamUrl,
+  type AslSampleSet,
+  type AslWordAction,
+  type AslClassifier,
   type BridgeState,
   type CameraMode,
   type CameraSource,
@@ -23,6 +33,8 @@ import {
 } from '../lib/bridge';
 
 const POLL_MS = 500;
+/** In Bragi the hand overlay and top-3 bars follow the hand, so poll faster. */
+const POLL_MS_ASL = 150;
 
 export interface Bridge {
   baseUrl: string;
@@ -59,6 +71,17 @@ export interface Bridge {
    * webcam (handy for testing away from the Pi). Resolves false if --camera
    * pinned the source at bridge startup. */
   setCameraSource(source: CameraSource): Promise<boolean>;
+  /** Switch Bragi's letter model (CNN, KNN or rules). Resolves false if it couldn't load. */
+  setAslClassifier(classifier: AslClassifier): Promise<boolean>;
+  /** Bragi sample recorder: capture one letter from the live feed. */
+  aslRecord(letter: string, count: number): Promise<boolean>;
+  aslRecordCancel(): void;
+  aslSetSampleSet(set: AslSampleSet): void;
+  aslRecordClear(letter?: string): void;
+  /** The word being spelled: finish (decode and speak), backspace, clear; reset also clears the sentence. */
+  aslWord(action: AslWordAction): void;
+  /** Retrain the CNN's SPACE output from the recorded Space samples. */
+  aslTrainSpace(): void;
 }
 
 export function useBridge(): Bridge {
@@ -70,11 +93,14 @@ export function useBridge(): Bridge {
 
   useEffect(() => {
     let cancelled = false;
+    let timer = 0;
+    let asl = false;
     const tick = async () => {
       const s = await fetchBridgeState(baseUrl);
       if (cancelled) return;
       if (s) {
         failures.current = 0;
+        asl = s.camera_mode === 'asl';
         setState(s);
         setOnline((was) => {
           if (!was) setSession((n) => n + 1); // (re)connected: give the stream a fresh URL
@@ -83,12 +109,12 @@ export function useBridge(): Bridge {
       } else if (++failures.current >= 2) {
         setOnline(false);
       }
+      timer = window.setTimeout(tick, asl ? POLL_MS_ASL : POLL_MS);
     };
-    tick();
-    const id = window.setInterval(tick, POLL_MS);
+    void tick();
     return () => {
       cancelled = true;
-      window.clearInterval(id);
+      window.clearTimeout(timer);
     };
   }, [baseUrl]);
 
@@ -200,6 +226,61 @@ export function useBridge(): Bridge {
     [baseUrl, refresh],
   );
 
+  const aslRecord = useCallback(
+    async (letter: string, count: number) => {
+      try {
+        setState(await bridgeAslRecord(baseUrl, letter, count));
+        return true;
+      } catch {
+        void refresh();
+        return false;
+      }
+    },
+    [baseUrl, refresh],
+  );
+
+  const aslRecordCancel = useCallback(() => {
+    bridgeAslRecordCancel(baseUrl).then(setState).catch(() => {});
+  }, [baseUrl]);
+
+  const aslSetSampleSet = useCallback(
+    (set: AslSampleSet) => {
+      bridgeAslSetSampleSet(baseUrl, set).then(setState).catch(() => {});
+    },
+    [baseUrl],
+  );
+
+  const aslRecordClear = useCallback(
+    (letter?: string) => {
+      bridgeAslRecordClear(baseUrl, letter).then(setState).catch(() => {});
+    },
+    [baseUrl],
+  );
+
+  const setAslClassifier = useCallback(
+    async (classifier: AslClassifier) => {
+      try {
+        setState(await bridgeSetAslClassifier(baseUrl, classifier));
+        return true;
+      } catch {
+        void refresh();
+        return false;
+      }
+    },
+    [baseUrl, refresh],
+  );
+
+  const aslTrainSpace = useCallback(() => {
+    bridgeAslTrainSpace(baseUrl).then(setState).catch(() => {});
+  }, [baseUrl]);
+
+  const aslWord = useCallback(
+    (action: AslWordAction) => {
+      bridgeAslWord(baseUrl, action).then(setState).catch(() => {});
+    },
+    [baseUrl],
+  );
+
   return {
     baseUrl,
     online,
@@ -220,5 +301,12 @@ export function useBridge(): Bridge {
     setRotate,
     setCameraMode,
     setCameraSource,
+    setAslClassifier,
+    aslRecord,
+    aslRecordCancel,
+    aslSetSampleSet,
+    aslRecordClear,
+    aslWord,
+    aslTrainSpace,
   };
 }

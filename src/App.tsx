@@ -4,12 +4,14 @@ import { SAMPLES, bridgeDetection, makeDetection, manualDetection, type Detectio
 import { useCellStream } from './hooks/useCellStream';
 import { useHardware } from './hooks/useHardware';
 import { useBridge } from './hooks/useBridge';
-import { TopBar, type Status, type View } from './components/TopBar';
+import { TopBar, type Rig, type Status, type View } from './components/TopBar';
 import { DevView } from './components/DevView';
 import { Viewfinder, type LiveFeed } from './components/Viewfinder';
 import { bridgeSendAslFrame, bridgeSendCameraFrame, type AslStatus } from './lib/bridge';
 import { BragiPanel } from './components/BragiPanel';
 import { BragiHistoryCard } from './components/BragiHistoryCard';
+import { useAslHand } from './hooks/useAslHand';
+import { BragiSkeletonCard } from './components/BragiSkeletonCard';
 import { DetectionCard } from './components/DetectionCard';
 import { TextReadCard } from './components/TextReadCard';
 import { QueueCard } from './components/QueueCard';
@@ -26,7 +28,10 @@ const FRAME_LOG_SIZE = 6;
 const QUEUE_GAP_MS = 700;
 /** Shown only until the bridge's first /state response arrives. */
 const DEFAULT_ASL: AslStatus = {
-  available: false, classifier: 'knn', label: null, stable_count: 0, stable_needed: 2, last_spoken: null, error: null,
+  available: false, classifier: 'cnn', label: null, stable_count: 0, stable_needed: 3, last_letter: null, error: null,
+  confidence: 0, moving: false, hand: null, skeleton_image: null, predictions: [],
+  hand_visible: false, word_letters: [], words: [], decoding: false, jev: false, cnn_training: false, cnn_train_result: null,
+  recording: null, record_progress: 0, record_target: 0, record_into: 'pi', sample_set: 'laptop', pi_counts: {}, laptop_counts: {},
 };
 
 /** `?text=Hello` in the URL plays that text on load; otherwise wait for real input. */
@@ -214,6 +219,24 @@ export default function App() {
   const recognizer = bridge.state?.recognizer ?? 'camera';
   const soundMode = recognizer === 'sound';
   const hasMic = recognizer !== 'camera';
+
+  // One switch for the whole rig. The bridge's camera source is the source of
+  // truth whenever there is a camera; the pins follow it, so "Live" always
+  // means the Pi's camera and its real solenoids together.
+  const bridgeCamera = bridge.online && !soundMode ? bridge.state?.camera_source : undefined;
+  const rig: Rig = bridgeCamera ? (bridgeCamera === 'pi' ? 'live' : 'laptop') : hardware.enabled ? 'live' : 'laptop';
+  const { setEnabled: setPinsEnabled } = hardware;
+  const { setCameraSource } = bridge;
+  const setRig = useCallback(
+    (next: Rig) => {
+      setPinsEnabled(next === 'live');
+      if (bridgeCamera) void setCameraSource(next === 'live' ? 'pi' : 'webcam');
+    },
+    [setPinsEnabled, setCameraSource, bridgeCamera],
+  );
+  useEffect(() => {
+    if (bridgeCamera) setPinsEnabled(bridgeCamera === 'pi');
+  }, [bridgeCamera, setPinsEnabled]);
   const cameraMode = bridge.state?.camera_mode ?? 'objects';
   const aslMode = cameraMode === 'asl';
   const { setCameraMode: bridgeSetCameraMode } = bridge;
@@ -232,14 +255,12 @@ export default function App() {
     [bridgeSetCameraMode],
   );
   const { baseUrl } = bridge;
-  // Browser camera drives detection whenever the bridge's own camera (the Pi
-  // stream, or a webcam it opened itself) isn't the one supplying frames --
-  // same fallback for Rune and Bragi alike, since detect_loop() feeds
-  // STATE["frame"] to asl_pass() exactly like it does the object detector
-  // (see bridge/detect_bridge.py). Only actually needed when that camera is
-  // down (e.g. a plain command-line Python process without an OS
-  // camera-permission prompt).
-  const browserFeedActive = bridge.online && !(bridge.state?.camera_ok ?? false);
+  // The browser's camera feeds the bridge when "Laptop" is picked, and as a
+  // fallback whenever the Pi stream isn't delivering. Keyed on camera_feed
+  // rather than camera_ok: browser frames make camera_ok true themselves, so
+  // keying on it would switch the feed off the moment it started working.
+  const browserFeedActive =
+    bridge.online && !soundMode && (bridge.state?.camera_source === 'webcam' || bridge.state?.camera_feed !== 'bridge');
   const handleFrame = useCallback(
     (blob: Blob) => {
       if (aslMode) void bridgeSendAslFrame(baseUrl, blob);
@@ -248,19 +269,10 @@ export default function App() {
     [aslMode, baseUrl],
   );
 
-  // Bragi's spoken-letter history: the bridge only reports the single most
-  // recent one (STATE["asl"]["last_spoken"]), so track transitions ourselves
-  // to build a running "what's been said" readout for the panel.
-  const [aslHistory, setAslHistory] = useState<string[]>([]);
-  const lastSpokenRef = useRef<string | null>(null);
-  const lastSpoken = bridge.state?.asl.last_spoken ?? null;
-  useEffect(() => {
-    if (lastSpoken && lastSpoken !== lastSpokenRef.current) {
-      setAslHistory((h) => [...h, lastSpoken]);
-    }
-    lastSpokenRef.current = lastSpoken;
-  }, [lastSpoken]);
-  const clearAslHistory = useCallback(() => setAslHistory([]), []);
+
+  // Bragi's live hand view, polled far faster than /state and merged over it.
+  const aslHand = useAslHand(baseUrl, aslMode && bridge.online);
+  const aslLive: AslStatus = { ...(bridge.state?.asl ?? DEFAULT_ASL), ...(aslHand ?? {}) };
 
   const liveFeed: LiveFeed | null =
     bridge.online && bridge.state && !soundMode
@@ -283,8 +295,8 @@ export default function App() {
         total={stream.total}
         live={hardware.live}
         host={hardware.host}
-        hardwareEnabled={hardware.enabled}
-        onSetHardwareEnabled={hardware.setEnabled}
+        rig={rig}
+        onRig={setRig}
         hardwareOnline={hardware.online}
         view={view}
         onView={setView}
@@ -328,8 +340,11 @@ export default function App() {
               aslActive={aslMode}
               browserFeedActive={browserFeedActive}
               onFrame={handleFrame}
+              captureMs={aslMode && bridge.state?.asl.classifier === 'cnn' ? 50 : undefined}
+              hand={aslMode ? aslLive.hand : null}
             />
           )}
+          {aslMode && <BragiSkeletonCard asl={aslLive} />}
           {!aslMode && <DetectionCard detection={detection} cellCount={cells.length} />}
           {/* Sound-only has no camera column to balance against, so its mic
               status stays here; with a camera, the feed (tall -- the Pi's is
@@ -340,8 +355,8 @@ export default function App() {
 
         {aslMode ? (
           <div className="col" aria-label="Output">
-            <BragiPanel asl={bridge.state?.asl ?? DEFAULT_ASL} />
-            <BragiHistoryCard history={aslHistory} onClear={clearAslHistory} />
+            <BragiPanel asl={aslLive} onWord={bridge.aslWord} onClassifier={bridge.setAslClassifier} />
+            <BragiHistoryCard words={bridge.state?.asl.words ?? []} decoding={bridge.state?.asl.decoding ?? false} onReset={() => bridge.aslWord('reset')} />
           </div>
         ) : (
           <div className="col" aria-label="Output">

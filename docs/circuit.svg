@@ -1,0 +1,262 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="1090" viewBox="0 0 1600 1090">
+<rect width="1600" height="1090" fill="#f4efe6"/>
+<text x="60" y="66" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="28" font-weight="650" fill="#1c1917" text-anchor="start">Rune · the braille cell</text>
+<text x="60" y="94" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="15" font-weight="400" fill="#8a8178" text-anchor="start">Six 12 V solenoids, six ULN2803 drivers, one Raspberry Pi Zero 2 W</text>
+<line x1="1030" y1="76" x2="1056" y2="76" stroke="#b3261e" stroke-width="3" stroke-linecap="round"/>
+<text x="1064" y="81" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="#8a8178" text-anchor="start">+12 V</text>
+<line x1="1115.0" y1="76" x2="1141.0" y2="76" stroke="#c27c1a" stroke-width="3" stroke-linecap="round"/>
+<text x="1149.0" y="81" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="#8a8178" text-anchor="start">+5 V</text>
+<line x1="1192.6" y1="76" x2="1218.6" y2="76" stroke="#3f7a68" stroke-width="3" stroke-linecap="round"/>
+<text x="1226.6" y="81" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="#8a8178" text-anchor="start">GPIO signal</text>
+<line x1="1322.0" y1="76" x2="1348.0" y2="76" stroke="#1c1917" stroke-width="3" stroke-linecap="round"/>
+<text x="1356.0" y="81" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="#8a8178" text-anchor="start">switched coil · ground</text>
+<line x1="90" y1="140" x2="1250" y2="140" stroke="#b3261e" stroke-width="2.6" stroke-linecap="round"/>
+<text x="680" y="128" font-family="'SF Mono', Menlo, monospace" font-size="13" font-weight="600" fill="#b3261e" text-anchor="middle">+12 V</text>
+<line x1="90" y1="140" x2="90" y2="196" stroke="#b3261e" stroke-width="2.6" stroke-linecap="round"/>
+<line x1="68" y1="198" x2="112" y2="198" stroke="#1c1917" stroke-width="2.4" stroke-linecap="round"/>
+<line x1="78" y1="210" x2="102" y2="210" stroke="#1c1917" stroke-width="4" stroke-linecap="round"/>
+<line x1="68" y1="222" x2="112" y2="222" stroke="#1c1917" stroke-width="2.4" stroke-linecap="round"/>
+<line x1="78" y1="234" x2="102" y2="234" stroke="#1c1917" stroke-width="4" stroke-linecap="round"/>
+<text x="124" y="212" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="15" font-weight="650" fill="#1c1917" text-anchor="start">12 V</text>
+<text x="124" y="232" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="#8a8178" text-anchor="start">8 × AA pack</text>
+<line x1="90" y1="236" x2="90" y2="990" stroke="#1c1917" stroke-width="2.2" stroke-linecap="round"/>
+<line x1="200" y1="140" x2="200" y2="362" stroke="#b3261e" stroke-width="2.6" stroke-linecap="round"/>
+<circle cx="200" cy="140" r="4.2" fill="#b3261e"/>
+<rect x="150" y="362" width="170" height="80" rx="12" fill="#fbf9f5" stroke="#1c1917" stroke-width="1.6"/>
+<text x="235.0" y="395" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="14" font-weight="600" fill="#1c1917" text-anchor="middle">Buck converter</text>
+<text x="235.0" y="418" font-family="'SF Mono', Menlo, monospace" font-size="13" font-weight="400" fill="#8a8178" text-anchor="middle">12 V → 5 V</text>
+<line x1="200" y1="442" x2="200" y2="990" stroke="#1c1917" stroke-width="2.2" stroke-linecap="round"/>
+<line x1="320" y1="402" x2="420" y2="402" stroke="#c27c1a" stroke-width="2.6" stroke-linecap="round"/>
+<text x="370" y="392" font-family="'SF Mono', Menlo, monospace" font-size="12" font-weight="600" fill="#c27c1a" text-anchor="middle">5 V</text>
+<rect x="240" y="586" width="130" height="80" rx="12" fill="#fbf9f5" stroke="#1c1917" stroke-width="1.6"/>
+<circle cx="275" cy="626" r="15" fill="#1c1917"/><circle cx="275" cy="626" r="6" fill="#4a4540"/>
+<text x="300" y="620" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="13" font-weight="600" fill="#1c1917" text-anchor="start">Camera</text>
+<text x="300" y="638" font-family="'SF Mono', Menlo, monospace" font-size="12" font-weight="400" fill="#8a8178" text-anchor="start">OV5647</text>
+<line x1="370" y1="626" x2="420" y2="626" stroke="#8a8178" stroke-width="2" stroke-linecap="round" stroke-dasharray="5 4"/>
+<text x="395" y="616" font-family="'SF Mono', Menlo, monospace" font-size="11" font-weight="600" fill="#8a8178" text-anchor="middle">CSI</text>
+<line x1="90" y1="990" x2="560" y2="990" stroke="#1c1917" stroke-width="2.6" stroke-linecap="round"/>
+<circle cx="200" cy="990" r="4.2" fill="#1c1917"/>
+<circle cx="530" cy="990" r="4.2" fill="#1c1917"/>
+<line x1="560" y1="990" x2="560.01" y2="998" stroke="#1c1917" stroke-width="2.2" stroke-linecap="round"/>
+<line x1="549" y1="998" x2="571" y2="998" stroke="#1c1917" stroke-width="2" stroke-linecap="round"/>
+<line x1="553" y1="1003" x2="567" y2="1003" stroke="#1c1917" stroke-width="2" stroke-linecap="round"/>
+<line x1="557" y1="1008" x2="563" y2="1008" stroke="#1c1917" stroke-width="2" stroke-linecap="round"/>
+<text x="90" y="1030" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="#8a8178" text-anchor="start">Common ground: battery, buck converter, Pi and every ULN2803 pin 9</text>
+<rect x="420" y="180" width="220" height="750" rx="18" fill="#20453c"/>
+<circle cx="436" cy="196" r="5" fill="none" stroke="#a9c2b8" stroke-width="1.4"/>
+<circle cx="624" cy="196" r="5" fill="none" stroke="#a9c2b8" stroke-width="1.4"/>
+<circle cx="436" cy="914" r="5" fill="none" stroke="#a9c2b8" stroke-width="1.4"/>
+<circle cx="624" cy="914" r="5" fill="none" stroke="#a9c2b8" stroke-width="1.4"/>
+<text x="530" y="224" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="17" font-weight="650" fill="#f4efe6" text-anchor="middle">Raspberry Pi</text>
+<text x="530" y="246" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="15" font-weight="500" fill="#f4efe6" text-anchor="middle">Zero 2 W</text>
+<text x="530" y="268" font-family="'SF Mono', Menlo, monospace" font-size="11" font-weight="400" fill="#a9c2b8" text-anchor="middle">gpiozero · HTTP :8080</text>
+<rect x="415" y="397" width="10" height="10" fill="#d4a84b"/>
+<text x="436" y="406" font-family="'SF Mono', Menlo, monospace" font-size="12" font-weight="500" fill="#f4efe6" text-anchor="start">5V · pin 2</text>
+<rect x="415" y="621" width="10" height="10" fill="#d4a84b"/>
+<text x="436" y="630" font-family="'SF Mono', Menlo, monospace" font-size="12" font-weight="500" fill="#f4efe6" text-anchor="start">CSI</text>
+<rect x="525" y="925" width="10" height="10" fill="#d4a84b"/>
+<line x1="530" y1="935" x2="530" y2="990" stroke="#1c1917" stroke-width="2.2" stroke-linecap="round"/>
+<text x="530" y="912" font-family="'SF Mono', Menlo, monospace" font-size="12" font-weight="500" fill="#f4efe6" text-anchor="middle">GND · pin 6</text>
+<rect x="635" y="285" width="10" height="10" fill="#d4a84b"/>
+<text x="624" y="287" font-family="'SF Mono', Menlo, monospace" font-size="13" font-weight="600" fill="#f4efe6" text-anchor="end">GPIO 17</text>
+<text x="624" y="304" font-family="'SF Mono', Menlo, monospace" font-size="11" font-weight="400" fill="#a9c2b8" text-anchor="end">pin 11</text>
+<line x1="645" y1="290" x2="760" y2="290" stroke="#3f7a68" stroke-width="2.4" stroke-linecap="round"/>
+<text x="752" y="282" font-family="'SF Mono', Menlo, monospace" font-size="11" font-weight="500" fill="#8a8178" text-anchor="end">1–8</text>
+<rect x="760" y="258" width="140" height="64" rx="6" fill="#1c1917"/>
+<path d="M760,283 a7,7 0 0,1 0,14" fill="#3a3531"/>
+<text x="830" y="287" font-family="'SF Mono', Menlo, monospace" font-size="14" font-weight="650" fill="#f4efe6" text-anchor="middle">ULN2803</text>
+<text x="830" y="305" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="11" font-weight="400" fill="#b5aca1" text-anchor="middle">U1 · 8 ch ganged</text>
+<text x="908" y="282" font-family="'SF Mono', Menlo, monospace" font-size="11" font-weight="500" fill="#8a8178" text-anchor="start">11–18</text>
+<line x1="800" y1="258" x2="800" y2="242" stroke="#b3261e" stroke-width="2.2" stroke-linecap="round"/>
+<rect x="778" y="226" width="44" height="17" rx="4" fill="#b3261e"/>
+<text x="800" y="238.5" font-family="'SF Mono', Menlo, monospace" font-size="11" font-weight="650" fill="#fff" text-anchor="middle">+12V</text>
+<text x="826" y="254" font-family="'SF Mono', Menlo, monospace" font-size="10" font-weight="500" fill="#8a8178" text-anchor="start">10</text>
+<line x1="860" y1="322" x2="860.01" y2="330" stroke="#1c1917" stroke-width="2.2" stroke-linecap="round"/>
+<line x1="849" y1="330" x2="871" y2="330" stroke="#1c1917" stroke-width="2" stroke-linecap="round"/>
+<line x1="853" y1="335" x2="867" y2="335" stroke="#1c1917" stroke-width="2" stroke-linecap="round"/>
+<line x1="857" y1="340" x2="863" y2="340" stroke="#1c1917" stroke-width="2" stroke-linecap="round"/>
+<text x="877" y="336" font-family="'SF Mono', Menlo, monospace" font-size="10" font-weight="500" fill="#8a8178" text-anchor="start">9</text>
+<line x1="900" y1="290" x2="1010" y2="290" stroke="#1c1917" stroke-width="2.4" stroke-linecap="round"/>
+<path d="M1010,290 a12.5,12.5 0 0,1 25,0 a12.5,12.5 0 0,1 25,0 a12.5,12.5 0 0,1 25,0 a12.5,12.5 0 0,1 25,0" fill="none" stroke="#1c1917" stroke-width="2.4"/>
+<line x1="1014" y1="299" x2="1106" y2="299" stroke="#8a8178" stroke-width="1.6" stroke-linecap="round"/>
+<line x1="1014" y1="303" x2="1106" y2="303" stroke="#8a8178" stroke-width="1.6" stroke-linecap="round"/>
+<text x="1010" y="268" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="13" font-weight="650" fill="#1c1917" text-anchor="start">dot 1</text>
+<text x="1052" y="268" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="12" font-weight="400" fill="#8a8178" text-anchor="start">· top-left</text>
+<line x1="1110" y1="290" x2="1250" y2="290" stroke="#b3261e" stroke-width="2.4" stroke-linecap="round"/>
+<text x="1128" y="283" font-family="'SF Mono', Menlo, monospace" font-size="13" font-weight="700" fill="#b3261e" text-anchor="middle">+</text>
+<text x="1003" y="285" font-family="'SF Mono', Menlo, monospace" font-size="13" font-weight="700" fill="#1c1917" text-anchor="end">−</text>
+<circle cx="1250" cy="290" r="4.2" fill="#b3261e"/>
+<rect x="635" y="397" width="10" height="10" fill="#d4a84b"/>
+<text x="624" y="399" font-family="'SF Mono', Menlo, monospace" font-size="13" font-weight="600" fill="#f4efe6" text-anchor="end">GPIO 25</text>
+<text x="624" y="416" font-family="'SF Mono', Menlo, monospace" font-size="11" font-weight="400" fill="#a9c2b8" text-anchor="end">pin 22</text>
+<line x1="645" y1="402" x2="760" y2="402" stroke="#3f7a68" stroke-width="2.4" stroke-linecap="round"/>
+<text x="752" y="394" font-family="'SF Mono', Menlo, monospace" font-size="11" font-weight="500" fill="#8a8178" text-anchor="end">1–8</text>
+<rect x="760" y="370" width="140" height="64" rx="6" fill="#1c1917"/>
+<path d="M760,395 a7,7 0 0,1 0,14" fill="#3a3531"/>
+<text x="830" y="399" font-family="'SF Mono', Menlo, monospace" font-size="14" font-weight="650" fill="#f4efe6" text-anchor="middle">ULN2803</text>
+<text x="830" y="417" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="11" font-weight="400" fill="#b5aca1" text-anchor="middle">U2 · 8 ch ganged</text>
+<text x="908" y="394" font-family="'SF Mono', Menlo, monospace" font-size="11" font-weight="500" fill="#8a8178" text-anchor="start">11–18</text>
+<line x1="800" y1="370" x2="800" y2="354" stroke="#b3261e" stroke-width="2.2" stroke-linecap="round"/>
+<rect x="778" y="338" width="44" height="17" rx="4" fill="#b3261e"/>
+<text x="800" y="350.5" font-family="'SF Mono', Menlo, monospace" font-size="11" font-weight="650" fill="#fff" text-anchor="middle">+12V</text>
+<text x="826" y="366" font-family="'SF Mono', Menlo, monospace" font-size="10" font-weight="500" fill="#8a8178" text-anchor="start">10</text>
+<line x1="860" y1="434" x2="860.01" y2="442" stroke="#1c1917" stroke-width="2.2" stroke-linecap="round"/>
+<line x1="849" y1="442" x2="871" y2="442" stroke="#1c1917" stroke-width="2" stroke-linecap="round"/>
+<line x1="853" y1="447" x2="867" y2="447" stroke="#1c1917" stroke-width="2" stroke-linecap="round"/>
+<line x1="857" y1="452" x2="863" y2="452" stroke="#1c1917" stroke-width="2" stroke-linecap="round"/>
+<text x="877" y="448" font-family="'SF Mono', Menlo, monospace" font-size="10" font-weight="500" fill="#8a8178" text-anchor="start">9</text>
+<line x1="900" y1="402" x2="1010" y2="402" stroke="#1c1917" stroke-width="2.4" stroke-linecap="round"/>
+<path d="M1010,402 a12.5,12.5 0 0,1 25,0 a12.5,12.5 0 0,1 25,0 a12.5,12.5 0 0,1 25,0 a12.5,12.5 0 0,1 25,0" fill="none" stroke="#1c1917" stroke-width="2.4"/>
+<line x1="1014" y1="411" x2="1106" y2="411" stroke="#8a8178" stroke-width="1.6" stroke-linecap="round"/>
+<line x1="1014" y1="415" x2="1106" y2="415" stroke="#8a8178" stroke-width="1.6" stroke-linecap="round"/>
+<text x="1010" y="380" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="13" font-weight="650" fill="#1c1917" text-anchor="start">dot 2</text>
+<text x="1052" y="380" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="12" font-weight="400" fill="#8a8178" text-anchor="start">· middle-left</text>
+<line x1="1110" y1="402" x2="1250" y2="402" stroke="#b3261e" stroke-width="2.4" stroke-linecap="round"/>
+<text x="1128" y="395" font-family="'SF Mono', Menlo, monospace" font-size="13" font-weight="700" fill="#b3261e" text-anchor="middle">+</text>
+<text x="1003" y="397" font-family="'SF Mono', Menlo, monospace" font-size="13" font-weight="700" fill="#1c1917" text-anchor="end">−</text>
+<circle cx="1250" cy="402" r="4.2" fill="#b3261e"/>
+<rect x="635" y="509" width="10" height="10" fill="#d4a84b"/>
+<text x="624" y="511" font-family="'SF Mono', Menlo, monospace" font-size="13" font-weight="600" fill="#f4efe6" text-anchor="end">GPIO 22</text>
+<text x="624" y="528" font-family="'SF Mono', Menlo, monospace" font-size="11" font-weight="400" fill="#a9c2b8" text-anchor="end">pin 15</text>
+<line x1="645" y1="514" x2="760" y2="514" stroke="#3f7a68" stroke-width="2.4" stroke-linecap="round"/>
+<text x="752" y="506" font-family="'SF Mono', Menlo, monospace" font-size="11" font-weight="500" fill="#8a8178" text-anchor="end">1–8</text>
+<rect x="760" y="482" width="140" height="64" rx="6" fill="#1c1917"/>
+<path d="M760,507 a7,7 0 0,1 0,14" fill="#3a3531"/>
+<text x="830" y="511" font-family="'SF Mono', Menlo, monospace" font-size="14" font-weight="650" fill="#f4efe6" text-anchor="middle">ULN2803</text>
+<text x="830" y="529" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="11" font-weight="400" fill="#b5aca1" text-anchor="middle">U3 · 8 ch ganged</text>
+<text x="908" y="506" font-family="'SF Mono', Menlo, monospace" font-size="11" font-weight="500" fill="#8a8178" text-anchor="start">11–18</text>
+<line x1="800" y1="482" x2="800" y2="466" stroke="#b3261e" stroke-width="2.2" stroke-linecap="round"/>
+<rect x="778" y="450" width="44" height="17" rx="4" fill="#b3261e"/>
+<text x="800" y="462.5" font-family="'SF Mono', Menlo, monospace" font-size="11" font-weight="650" fill="#fff" text-anchor="middle">+12V</text>
+<text x="826" y="478" font-family="'SF Mono', Menlo, monospace" font-size="10" font-weight="500" fill="#8a8178" text-anchor="start">10</text>
+<line x1="860" y1="546" x2="860.01" y2="554" stroke="#1c1917" stroke-width="2.2" stroke-linecap="round"/>
+<line x1="849" y1="554" x2="871" y2="554" stroke="#1c1917" stroke-width="2" stroke-linecap="round"/>
+<line x1="853" y1="559" x2="867" y2="559" stroke="#1c1917" stroke-width="2" stroke-linecap="round"/>
+<line x1="857" y1="564" x2="863" y2="564" stroke="#1c1917" stroke-width="2" stroke-linecap="round"/>
+<text x="877" y="560" font-family="'SF Mono', Menlo, monospace" font-size="10" font-weight="500" fill="#8a8178" text-anchor="start">9</text>
+<line x1="900" y1="514" x2="1010" y2="514" stroke="#1c1917" stroke-width="2.4" stroke-linecap="round"/>
+<path d="M1010,514 a12.5,12.5 0 0,1 25,0 a12.5,12.5 0 0,1 25,0 a12.5,12.5 0 0,1 25,0 a12.5,12.5 0 0,1 25,0" fill="none" stroke="#1c1917" stroke-width="2.4"/>
+<line x1="1014" y1="523" x2="1106" y2="523" stroke="#8a8178" stroke-width="1.6" stroke-linecap="round"/>
+<line x1="1014" y1="527" x2="1106" y2="527" stroke="#8a8178" stroke-width="1.6" stroke-linecap="round"/>
+<text x="1010" y="492" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="13" font-weight="650" fill="#1c1917" text-anchor="start">dot 3</text>
+<text x="1052" y="492" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="12" font-weight="400" fill="#8a8178" text-anchor="start">· bottom-left</text>
+<line x1="1110" y1="514" x2="1250" y2="514" stroke="#b3261e" stroke-width="2.4" stroke-linecap="round"/>
+<text x="1128" y="507" font-family="'SF Mono', Menlo, monospace" font-size="13" font-weight="700" fill="#b3261e" text-anchor="middle">+</text>
+<text x="1003" y="509" font-family="'SF Mono', Menlo, monospace" font-size="13" font-weight="700" fill="#1c1917" text-anchor="end">−</text>
+<circle cx="1250" cy="514" r="4.2" fill="#b3261e"/>
+<rect x="635" y="621" width="10" height="10" fill="#d4a84b"/>
+<text x="624" y="623" font-family="'SF Mono', Menlo, monospace" font-size="13" font-weight="600" fill="#f4efe6" text-anchor="end">GPIO 27</text>
+<text x="624" y="640" font-family="'SF Mono', Menlo, monospace" font-size="11" font-weight="400" fill="#a9c2b8" text-anchor="end">pin 13</text>
+<line x1="645" y1="626" x2="760" y2="626" stroke="#3f7a68" stroke-width="2.4" stroke-linecap="round"/>
+<text x="752" y="618" font-family="'SF Mono', Menlo, monospace" font-size="11" font-weight="500" fill="#8a8178" text-anchor="end">1–8</text>
+<rect x="760" y="594" width="140" height="64" rx="6" fill="#1c1917"/>
+<path d="M760,619 a7,7 0 0,1 0,14" fill="#3a3531"/>
+<text x="830" y="623" font-family="'SF Mono', Menlo, monospace" font-size="14" font-weight="650" fill="#f4efe6" text-anchor="middle">ULN2803</text>
+<text x="830" y="641" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="11" font-weight="400" fill="#b5aca1" text-anchor="middle">U4 · 8 ch ganged</text>
+<text x="908" y="618" font-family="'SF Mono', Menlo, monospace" font-size="11" font-weight="500" fill="#8a8178" text-anchor="start">11–18</text>
+<line x1="800" y1="594" x2="800" y2="578" stroke="#b3261e" stroke-width="2.2" stroke-linecap="round"/>
+<rect x="778" y="562" width="44" height="17" rx="4" fill="#b3261e"/>
+<text x="800" y="574.5" font-family="'SF Mono', Menlo, monospace" font-size="11" font-weight="650" fill="#fff" text-anchor="middle">+12V</text>
+<text x="826" y="590" font-family="'SF Mono', Menlo, monospace" font-size="10" font-weight="500" fill="#8a8178" text-anchor="start">10</text>
+<line x1="860" y1="658" x2="860.01" y2="666" stroke="#1c1917" stroke-width="2.2" stroke-linecap="round"/>
+<line x1="849" y1="666" x2="871" y2="666" stroke="#1c1917" stroke-width="2" stroke-linecap="round"/>
+<line x1="853" y1="671" x2="867" y2="671" stroke="#1c1917" stroke-width="2" stroke-linecap="round"/>
+<line x1="857" y1="676" x2="863" y2="676" stroke="#1c1917" stroke-width="2" stroke-linecap="round"/>
+<text x="877" y="672" font-family="'SF Mono', Menlo, monospace" font-size="10" font-weight="500" fill="#8a8178" text-anchor="start">9</text>
+<line x1="900" y1="626" x2="1010" y2="626" stroke="#1c1917" stroke-width="2.4" stroke-linecap="round"/>
+<path d="M1010,626 a12.5,12.5 0 0,1 25,0 a12.5,12.5 0 0,1 25,0 a12.5,12.5 0 0,1 25,0 a12.5,12.5 0 0,1 25,0" fill="none" stroke="#1c1917" stroke-width="2.4"/>
+<line x1="1014" y1="635" x2="1106" y2="635" stroke="#8a8178" stroke-width="1.6" stroke-linecap="round"/>
+<line x1="1014" y1="639" x2="1106" y2="639" stroke="#8a8178" stroke-width="1.6" stroke-linecap="round"/>
+<text x="1010" y="604" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="13" font-weight="650" fill="#1c1917" text-anchor="start">dot 4</text>
+<text x="1052" y="604" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="12" font-weight="400" fill="#8a8178" text-anchor="start">· top-right</text>
+<line x1="1110" y1="626" x2="1250" y2="626" stroke="#b3261e" stroke-width="2.4" stroke-linecap="round"/>
+<text x="1128" y="619" font-family="'SF Mono', Menlo, monospace" font-size="13" font-weight="700" fill="#b3261e" text-anchor="middle">+</text>
+<text x="1003" y="621" font-family="'SF Mono', Menlo, monospace" font-size="13" font-weight="700" fill="#1c1917" text-anchor="end">−</text>
+<circle cx="1250" cy="626" r="4.2" fill="#b3261e"/>
+<rect x="635" y="733" width="10" height="10" fill="#d4a84b"/>
+<text x="624" y="735" font-family="'SF Mono', Menlo, monospace" font-size="13" font-weight="600" fill="#f4efe6" text-anchor="end">GPIO 23</text>
+<text x="624" y="752" font-family="'SF Mono', Menlo, monospace" font-size="11" font-weight="400" fill="#a9c2b8" text-anchor="end">pin 16</text>
+<line x1="645" y1="738" x2="760" y2="738" stroke="#3f7a68" stroke-width="2.4" stroke-linecap="round"/>
+<text x="752" y="730" font-family="'SF Mono', Menlo, monospace" font-size="11" font-weight="500" fill="#8a8178" text-anchor="end">1–8</text>
+<rect x="760" y="706" width="140" height="64" rx="6" fill="#1c1917"/>
+<path d="M760,731 a7,7 0 0,1 0,14" fill="#3a3531"/>
+<text x="830" y="735" font-family="'SF Mono', Menlo, monospace" font-size="14" font-weight="650" fill="#f4efe6" text-anchor="middle">ULN2803</text>
+<text x="830" y="753" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="11" font-weight="400" fill="#b5aca1" text-anchor="middle">U5 · 8 ch ganged</text>
+<text x="908" y="730" font-family="'SF Mono', Menlo, monospace" font-size="11" font-weight="500" fill="#8a8178" text-anchor="start">11–18</text>
+<line x1="800" y1="706" x2="800" y2="690" stroke="#b3261e" stroke-width="2.2" stroke-linecap="round"/>
+<rect x="778" y="674" width="44" height="17" rx="4" fill="#b3261e"/>
+<text x="800" y="686.5" font-family="'SF Mono', Menlo, monospace" font-size="11" font-weight="650" fill="#fff" text-anchor="middle">+12V</text>
+<text x="826" y="702" font-family="'SF Mono', Menlo, monospace" font-size="10" font-weight="500" fill="#8a8178" text-anchor="start">10</text>
+<line x1="860" y1="770" x2="860.01" y2="778" stroke="#1c1917" stroke-width="2.2" stroke-linecap="round"/>
+<line x1="849" y1="778" x2="871" y2="778" stroke="#1c1917" stroke-width="2" stroke-linecap="round"/>
+<line x1="853" y1="783" x2="867" y2="783" stroke="#1c1917" stroke-width="2" stroke-linecap="round"/>
+<line x1="857" y1="788" x2="863" y2="788" stroke="#1c1917" stroke-width="2" stroke-linecap="round"/>
+<text x="877" y="784" font-family="'SF Mono', Menlo, monospace" font-size="10" font-weight="500" fill="#8a8178" text-anchor="start">9</text>
+<line x1="900" y1="738" x2="1010" y2="738" stroke="#1c1917" stroke-width="2.4" stroke-linecap="round"/>
+<path d="M1010,738 a12.5,12.5 0 0,1 25,0 a12.5,12.5 0 0,1 25,0 a12.5,12.5 0 0,1 25,0 a12.5,12.5 0 0,1 25,0" fill="none" stroke="#1c1917" stroke-width="2.4"/>
+<line x1="1014" y1="747" x2="1106" y2="747" stroke="#8a8178" stroke-width="1.6" stroke-linecap="round"/>
+<line x1="1014" y1="751" x2="1106" y2="751" stroke="#8a8178" stroke-width="1.6" stroke-linecap="round"/>
+<text x="1010" y="716" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="13" font-weight="650" fill="#1c1917" text-anchor="start">dot 5</text>
+<text x="1052" y="716" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="12" font-weight="400" fill="#8a8178" text-anchor="start">· middle-right</text>
+<line x1="1110" y1="738" x2="1250" y2="738" stroke="#b3261e" stroke-width="2.4" stroke-linecap="round"/>
+<text x="1128" y="731" font-family="'SF Mono', Menlo, monospace" font-size="13" font-weight="700" fill="#b3261e" text-anchor="middle">+</text>
+<text x="1003" y="733" font-family="'SF Mono', Menlo, monospace" font-size="13" font-weight="700" fill="#1c1917" text-anchor="end">−</text>
+<circle cx="1250" cy="738" r="4.2" fill="#b3261e"/>
+<rect x="635" y="845" width="10" height="10" fill="#d4a84b"/>
+<text x="624" y="847" font-family="'SF Mono', Menlo, monospace" font-size="13" font-weight="600" fill="#f4efe6" text-anchor="end">GPIO 24</text>
+<text x="624" y="864" font-family="'SF Mono', Menlo, monospace" font-size="11" font-weight="400" fill="#a9c2b8" text-anchor="end">pin 18</text>
+<line x1="645" y1="850" x2="760" y2="850" stroke="#3f7a68" stroke-width="2.4" stroke-linecap="round"/>
+<text x="752" y="842" font-family="'SF Mono', Menlo, monospace" font-size="11" font-weight="500" fill="#8a8178" text-anchor="end">1–8</text>
+<rect x="760" y="818" width="140" height="64" rx="6" fill="#1c1917"/>
+<path d="M760,843 a7,7 0 0,1 0,14" fill="#3a3531"/>
+<text x="830" y="847" font-family="'SF Mono', Menlo, monospace" font-size="14" font-weight="650" fill="#f4efe6" text-anchor="middle">ULN2803</text>
+<text x="830" y="865" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="11" font-weight="400" fill="#b5aca1" text-anchor="middle">U6 · 8 ch ganged</text>
+<text x="908" y="842" font-family="'SF Mono', Menlo, monospace" font-size="11" font-weight="500" fill="#8a8178" text-anchor="start">11–18</text>
+<line x1="800" y1="818" x2="800" y2="802" stroke="#b3261e" stroke-width="2.2" stroke-linecap="round"/>
+<rect x="778" y="786" width="44" height="17" rx="4" fill="#b3261e"/>
+<text x="800" y="798.5" font-family="'SF Mono', Menlo, monospace" font-size="11" font-weight="650" fill="#fff" text-anchor="middle">+12V</text>
+<text x="826" y="814" font-family="'SF Mono', Menlo, monospace" font-size="10" font-weight="500" fill="#8a8178" text-anchor="start">10</text>
+<line x1="860" y1="882" x2="860.01" y2="890" stroke="#1c1917" stroke-width="2.2" stroke-linecap="round"/>
+<line x1="849" y1="890" x2="871" y2="890" stroke="#1c1917" stroke-width="2" stroke-linecap="round"/>
+<line x1="853" y1="895" x2="867" y2="895" stroke="#1c1917" stroke-width="2" stroke-linecap="round"/>
+<line x1="857" y1="900" x2="863" y2="900" stroke="#1c1917" stroke-width="2" stroke-linecap="round"/>
+<text x="877" y="896" font-family="'SF Mono', Menlo, monospace" font-size="10" font-weight="500" fill="#8a8178" text-anchor="start">9</text>
+<line x1="900" y1="850" x2="1010" y2="850" stroke="#1c1917" stroke-width="2.4" stroke-linecap="round"/>
+<path d="M1010,850 a12.5,12.5 0 0,1 25,0 a12.5,12.5 0 0,1 25,0 a12.5,12.5 0 0,1 25,0 a12.5,12.5 0 0,1 25,0" fill="none" stroke="#1c1917" stroke-width="2.4"/>
+<line x1="1014" y1="859" x2="1106" y2="859" stroke="#8a8178" stroke-width="1.6" stroke-linecap="round"/>
+<line x1="1014" y1="863" x2="1106" y2="863" stroke="#8a8178" stroke-width="1.6" stroke-linecap="round"/>
+<text x="1010" y="828" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="13" font-weight="650" fill="#1c1917" text-anchor="start">dot 6</text>
+<text x="1052" y="828" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="12" font-weight="400" fill="#8a8178" text-anchor="start">· bottom-right</text>
+<line x1="1110" y1="850" x2="1250" y2="850" stroke="#b3261e" stroke-width="2.4" stroke-linecap="round"/>
+<text x="1128" y="843" font-family="'SF Mono', Menlo, monospace" font-size="13" font-weight="700" fill="#b3261e" text-anchor="middle">+</text>
+<text x="1003" y="845" font-family="'SF Mono', Menlo, monospace" font-size="13" font-weight="700" fill="#1c1917" text-anchor="end">−</text>
+<circle cx="1250" cy="850" r="4.2" fill="#b3261e"/>
+<line x1="1250" y1="140" x2="1250" y2="850" stroke="#b3261e" stroke-width="2.6" stroke-linecap="round"/>
+<rect x="1310" y="180" width="250" height="400" rx="18" fill="#fbf9f5" stroke="#d9d0c2" stroke-width="1.4"/>
+<text x="1335" y="216" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="17" font-weight="650" fill="#1c1917" text-anchor="start">The cell</text>
+<text x="1335" y="238" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="#8a8178" text-anchor="start">as the fingertip feels it</text>
+<circle cx="1395" cy="305" r="29" fill="#1c1917" stroke="#1c1917" stroke-width="1.6"/>
+<text x="1395" y="310" font-family="'SF Mono', Menlo, monospace" font-size="15" font-weight="600" fill="#f4efe6" text-anchor="middle">1</text>
+<circle cx="1395" cy="395" r="29" fill="#1c1917" stroke="#1c1917" stroke-width="1.6"/>
+<text x="1395" y="400" font-family="'SF Mono', Menlo, monospace" font-size="15" font-weight="600" fill="#f4efe6" text-anchor="middle">2</text>
+<circle cx="1395" cy="485" r="29" fill="#1c1917" stroke="#1c1917" stroke-width="1.6"/>
+<text x="1395" y="490" font-family="'SF Mono', Menlo, monospace" font-size="15" font-weight="600" fill="#f4efe6" text-anchor="middle">3</text>
+<circle cx="1475" cy="305" r="29" fill="#efe8dc" stroke="#cfc6b8" stroke-width="1.6"/>
+<text x="1475" y="310" font-family="'SF Mono', Menlo, monospace" font-size="15" font-weight="600" fill="#8a8178" text-anchor="middle">4</text>
+<circle cx="1475" cy="395" r="29" fill="#1c1917" stroke="#1c1917" stroke-width="1.6"/>
+<text x="1475" y="400" font-family="'SF Mono', Menlo, monospace" font-size="15" font-weight="600" fill="#f4efe6" text-anchor="middle">5</text>
+<circle cx="1475" cy="485" r="29" fill="#efe8dc" stroke="#cfc6b8" stroke-width="1.6"/>
+<text x="1475" y="490" font-family="'SF Mono', Menlo, monospace" font-size="15" font-weight="600" fill="#8a8178" text-anchor="middle">6</text>
+<text x="1435" y="553" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="#8a8178" text-anchor="middle">“R” for Rune · dots 1 2 3 5</text>
+<rect x="1310" y="610" width="250" height="290" rx="18" fill="#fbf9f5" stroke="#d9d0c2" stroke-width="1.4"/>
+<text x="1335" y="646" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="17" font-weight="650" fill="#1c1917" text-anchor="start">Safety, in the Pi</text>
+<text x="1335" y="690" font-family="'SF Mono', Menlo, monospace" font-size="14" font-weight="650" fill="#b3261e" text-anchor="start">≤ 2 s</text>
+<text x="1335" y="709" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="12" font-weight="400" fill="#8a8178" text-anchor="start">per dot, whatever a client asks</text>
+<text x="1335" y="740" font-family="'SF Mono', Menlo, monospace" font-size="14" font-weight="650" fill="#b3261e" text-anchor="start">Off</text>
+<text x="1335" y="759" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="12" font-weight="400" fill="#8a8178" text-anchor="start">on exit, on error, on Ctrl+C</text>
+<text x="1335" y="790" font-family="'SF Mono', Menlo, monospace" font-size="14" font-weight="650" fill="#b3261e" text-anchor="start">Lock</text>
+<text x="1335" y="809" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="12" font-weight="400" fill="#8a8178" text-anchor="start">refuses every actuation (HTTP 423)</text>
+<text x="1335" y="840" font-family="'SF Mono', Menlo, monospace" font-size="14" font-weight="650" fill="#b3261e" text-anchor="start">Stop</text>
+<text x="1335" y="859" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="12" font-weight="400" fill="#8a8178" text-anchor="start">drops every pin, clears the queue</text>
+<text x="90" y="1060" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="#8a8178" text-anchor="start">Each ULN2803 gangs all eight of its channels onto one solenoid. COM (pin 10) at +12 V gives the chip's built-in flyback diodes a path for each coil's switch-off spike.</text>
+</svg>

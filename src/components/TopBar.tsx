@@ -3,6 +3,8 @@ import type { CameraMode, Recognizer } from '../lib/bridge';
 
 export type Status = 'idle' | 'scanning' | 'streaming' | 'paused' | 'complete';
 export type View = 'main' | 'dev';
+/** Live: the Pi's camera and its real solenoids. Laptop: this laptop's camera and simulated pins. */
+export type Rig = 'live' | 'laptop';
 
 interface Props {
   status: Status;
@@ -11,9 +13,8 @@ interface Props {
   /** True when cells are being driven onto the real solenoids. */
   live: boolean;
   host: string;
-  /** The user's chosen target: drive the real Pi, or simulate on the laptop. */
-  hardwareEnabled: boolean;
-  onSetHardwareEnabled(enabled: boolean): void;
+  rig: Rig;
+  onRig(rig: Rig): void;
   /** The Pi answers pings right now -- "Live" can't be picked until it does. */
   hardwareOnline: boolean;
   view: View;
@@ -49,7 +50,7 @@ const STATUS_TEXT: Record<Status, string> = {
   complete: 'Message complete',
 };
 
-export function TopBar({ status, index, total, live, host, hardwareEnabled, onSetHardwareEnabled, hardwareOnline, view, onView, onStop, pinsLocked, onLockPins, recognizer, cameraPaused, onPauseCamera, micPaused, onPauseMic, nearbyVoice, cameraMode, onCameraMode, cameraModeBusy, bridgeOffline }: Props) {
+export function TopBar({ status, index, total, live, host, rig, onRig, hardwareOnline, view, onView, onStop, pinsLocked, onLockPins, recognizer, cameraPaused, onPauseCamera, micPaused, onPauseMic, nearbyVoice, cameraMode, onCameraMode, cameraModeBusy, bridgeOffline }: Props) {
   const showCount = status === 'streaming' || status === 'paused';
   const hasMic = recognizer !== 'camera';
   const hasCamera = recognizer !== 'sound';
@@ -112,13 +113,13 @@ export function TopBar({ status, index, total, live, host, hardwareEnabled, onSe
         )}
         <nav
           className="tabs"
-          aria-label="Hardware target"
-          title={hardwareOnline ? 'Drive the real Pi, or simulate here on the laptop' : `Pi not reachable at ${host} -- Live can't be picked until it answers`}
+          aria-label="Rig"
+          title={hardwareOnline ? "Live: the Pi's camera and real solenoids. Laptop: this laptop's camera and simulated pins." : `Pi not reachable at ${host} -- Live can't be picked until it answers`}
         >
-          <button type="button" className={`tab ${hardwareEnabled ? 'is-active' : ''}`} disabled={!hardwareOnline} onClick={() => onSetHardwareEnabled(true)}>
+          <button type="button" className={`tab ${rig === 'live' ? 'is-active' : ''}`} disabled={!hardwareOnline} onClick={() => onRig('live')}>
             Live
           </button>
-          <button type="button" className={`tab ${!hardwareEnabled ? 'is-active' : ''}`} onClick={() => onSetHardwareEnabled(false)}>
+          <button type="button" className={`tab ${rig === 'laptop' ? 'is-active' : ''}`} onClick={() => onRig('laptop')}>
             Laptop
           </button>
         </nav>

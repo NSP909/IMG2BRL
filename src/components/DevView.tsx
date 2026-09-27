@@ -5,6 +5,7 @@ import type { BridgeDetection, Engine } from '../lib/bridge';
 import type { DetectionKind } from '../lib/detections';
 import { Viewfinder, type LiveFeed } from './Viewfinder';
 import { SoundPanel } from './SoundPanel';
+import { AslRecorderCard } from './AslRecorderCard';
 import { ComposeCard } from './ComposeCard';
 import { PinPanel, type Frame } from './PinPanel';
 import { SettingsCard, type Settings } from './SettingsCard';
@@ -65,26 +66,6 @@ export function DevView({ bridge, nowPlaying, onSendNow, onSendText, sendDisable
                 <div className="tabs" role="radiogroup" aria-label="Rotation">
                   {([0, 90, 180, 270] as const).map((d) => (
                     <button key={d} type="button" className={`tab ${s.rotate === d ? 'is-active' : ''}`} onClick={() => bridge.setRotate(d)} disabled={!bridge.online}>{d}°</button>
-                  ))}
-                </div>
-              </div>
-            )}
-            {s && (
-              <div className="field__row">
-                <span className="small muted" title={s.camera_source_fixed ? '--camera pinned this at bridge startup' : 'Pi camera vs this laptop’s webcam, for testing without the Pi'}>
-                  Camera source{s.camera_source_fixed ? ' (fixed)' : ''}
-                </span>
-                <div className="tabs" role="radiogroup" aria-label="Camera source">
-                  {(['pi', 'webcam'] as const).map((src) => (
-                    <button
-                      key={src}
-                      type="button"
-                      className={`tab ${s.camera_source === src ? 'is-active' : ''}`}
-                      onClick={() => void bridge.setCameraSource(src)}
-                      disabled={!bridge.online || s.camera_source_fixed}
-                    >
-                      {src === 'pi' ? 'Pi' : 'Webcam'}
-                    </button>
                   ))}
                 </div>
               </div>
@@ -193,6 +174,7 @@ export function DevView({ bridge, nowPlaying, onSendNow, onSendText, sendDisable
       </div>
 
       <div className="col" aria-label="Input and hardware controls">
+        {s?.camera_mode === 'asl' && <AslRecorderCard bridge={bridge} />}
         {hasMic && <SoundPanel bridge={bridge} />}
         {soundOnly && nowPlaying && <p className="small muted">Now on the finger: <b>{nowPlaying}</b></p>}
         <ComposeCard onSend={onSendText} disabled={sendDisabled} />

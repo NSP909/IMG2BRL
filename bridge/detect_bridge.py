@@ -19,6 +19,7 @@ for a few seconds. Speech is independent of the camera and never pruned.
 HTTP on :8765 (CORS open):
   GET  /state                  detections, text gate, claude, queue, mode, stats
   GET  /frame.jpg              latest annotated frame
+  GET  /asl_hand               Bragi's live hand points, the CNN's skeleton image and top-3 (for fast polling)
   GET  /stream.mjpg            live annotated MJPEG stream
   POST /next                   pop the next queued item ({"item": null} when empty)
   POST /capture                queue the current best detection now
@@ -32,7 +33,12 @@ HTTP on :8765 (CORS open):
   POST /proximity?enabled=1|0[&threshold=0.55] opt-in: accept speech without the name while a person is close
   POST /rotate?deg=0|90|180|270                rotate camera frames clockwise (saved in bridge/camera.json)
   POST /camera_mode?value=objects|asl          same camera: YOLO/EAST/Claude, or ASL fingerspelling -> spoken aloud
-  POST /camera_source?value=pi|webcam          switch between the Pi's camera and this laptop's webcam (ignored if --camera fixed it)
+  POST /asl_record?letter=A&count=60           record Bragi samples (a letter or SPACE) from the live feed into that camera's set
+  POST /asl_record_cancel · /asl_record_clear[?letter=A] · /asl_sample_set?value=laptop|pi|both
+  POST /asl_train_space                        retrain the CNN's SPACE output from the recorded Space samples (~40 s)
+  POST /asl_word?action=finish|backspace|clear|reset   the word being spelled (finish = decode with Jev and speak it)
+  POST /asl_classifier?value=cnn|knn|geometric  switch Bragi's letter model live (the skeleton CNN is the default)
+  POST /camera_source?value=pi|webcam         switch between the Pi's camera and this laptop's webcam (ignored if --camera fixed it)
 
 ASL mode (bridge/asl_mode.py) is the opposite direction from everything else
 here: it reads the *wearer's own* signing and speaks it aloud locally (macOS
@@ -44,7 +50,7 @@ Sound mode (separate from the camera pipeline):
   python3 bridge/detect_bridge.py --recognizer sound --wake-name Ritesh \
       --wake-alias Reetesh --mic "MacBook Air Microphone"
 """
-import argparse, collections, json, os, re, subprocess, tempfile, threading, time
+import argparse, collections, json, os, re, subprocess, sys, tempfile, threading, time
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 from urllib.parse import urlparse, parse_qs, quote
 from urllib.request import Request, urlopen
@@ -52,6 +58,7 @@ from urllib.request import Request, urlopen
 import numpy as np
 
 import asl_mode
+import asl_words
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -102,11 +109,16 @@ ap.add_argument("--transcription-model", default="gpt-transcribe",
                 help="sound mode: OpenAI transcription model")
 ap.add_argument("--transcription-timeout", type=float, default=15.0,
                 help="sound mode: maximum seconds for each cloud transcription request")
-ap.add_argument("--asl-classifier", choices=["knn", "geometric"], default="knn",
-                help="asl mode: nearest-neighbour match against a recorded signer (24 letters, needs bridge/models/asl_samples.json), "
-                     "or zero-training-data finger-angle rules (19 letters)")
+ap.add_argument("--asl-classifier", choices=["cnn", "knn", "geometric"], default="cnn",
+                help="asl mode: small skeleton CNN (26 letters, bridge/models/asl_cnn_model.onnx), personal KNN "
+                     "over recorded samples (24 letters), or zero-training-data finger-angle rules (19 letters)")
 ap.add_argument("--asl-stable", type=int, default=2,
-                help="asl mode: consecutive detect passes the same letter must hold before it is spoken")
+                help="asl mode: consecutive passes the KNN/geometric classifiers need before a letter counts")
+ap.add_argument("--asl-cnn-stable", type=int, default=3,
+                help="asl mode: consecutive confident CNN passes before a letter counts (its scores are "
+                     "already averaged over 8 frames, so this is a short extra check, not the main hold)")
+ap.add_argument("--asl-interval", type=float, default=0.03,
+                help="asl mode: seconds between CNN passes (its smoothing and J/Z motion need a fast feed)")
 args = ap.parse_args()
 WAKE_FILE = os.path.join(HERE, "wake.json")
 
@@ -155,13 +167,14 @@ CAMERA_SWITCH = threading.Event()   # set to force capture_loop() to drop its cu
 
 
 def current_camera_source():
-    """Pi's own camera (tcp) or this laptop's webcam (index 0) -- live-togglable
-    via POST /camera_source, unless --camera pinned it to something fixed."""
+    """The Pi's camera stream, or None for "webcam": the laptop camera is fed
+    by the browser (POST /camera_frame, /asl_frame), because macOS won't grant
+    camera access to a background Python process. --camera pins a fixed source."""
     if CAMERA_FIXED:
         return args.camera
     with LOCK:
         mode = STATE["camera_source"]
-    return 0 if mode == "webcam" else f"tcp://{args.pi}:8555"
+    return None if mode == "webcam" else f"tcp://{args.pi}:8555"
 
 # COCO name -> what the finger should feel
 RELABEL = {"cell phone": "phone", "dining table": "table", "tv": "screen", "potted plant": "plant", "handbag": "bag"}
@@ -195,15 +208,25 @@ if args.engine is None:
 
 LOCK = threading.Lock()
 SOUND_SERVICE = None
-ASL = asl_mode.AslRecognizer(classifier=args.asl_classifier, stable_passes=args.asl_stable)
+ASL = asl_mode.AslRecognizer(classifier=args.asl_classifier, stable_passes=args.asl_stable,
+                             cnn_stable_passes=args.asl_cnn_stable)
+# Fingerspelled letters -> the intended word, picked by Jev (TypeSafe). See asl_words.py.
+DECODER = asl_words.WordDecoder(load_env_key("TYPESAFE_API_KEY"))
 STATE = {
     "frame": None, "jpeg": None, "frame_at": 0.0, "camera_ok": False, "browser_frame_at": 0.0,
+    # Last frame from this process's own capture (the Pi stream), as opposed to
+    # one POSTed by a browser -- lets snapshot() say who is actually feeding.
+    "bridge_frame_at": 0.0,
     # Same frame as "frame", but before STATE["rotate"] is applied. Rune wants
     # the rotated frame (so it displays and reads upright); Bragi's KNN
     # classifier was trained on samples recorded via a browser webcam that was
     # never rotated, so it needs this one instead -- see asl_pass() call in
     # detect_loop().
     "frame_raw": None,
+    # How far clockwise frame_raw must turn to be upright: STATE["rotate"] for
+    # the Pi's own frames, 0 for browser frames (already upright). Only the
+    # CNN uses it -- it was trained on upright hands.
+    "frame_raw_rotate": 0,
     "detections": [], "best": None, "mode": args.mode, "queue": collections.deque(),   # kept sorted: speech, then text, then objects
     # Same camera as objects/text; interpreted as ASL fingerspelling and spoken
     # locally instead of queued as braille. See the module docstring above.
@@ -213,7 +236,13 @@ STATE = {
     # current_camera_source()), unless --camera pinned it for a test.
     "camera_source": args.camera_source,
     "asl": {"available": False, "classifier": args.asl_classifier, "label": None,
-            "stable_count": 0, "stable_needed": args.asl_stable, "last_spoken": None, "error": None},
+            "stable_count": 0, "stable_needed": ASL.stable_needed, "last_letter": None, "error": None,
+            "cnn_training": False, "cnn_train_result": None,
+            "confidence": 0.0, "moving": False, "hand": None, "skeleton_image": None, "predictions": [],
+            "word_letters": [], "words": [], "decoding": False, "jev": bool(DECODER.api_key),
+            "record_into": "pi", "laptop_counts": {},
+            "hand_visible": False, "recording": None, "record_progress": 0, "record_target": 0,
+            "sample_set": "laptop", "pi_counts": {}},
     "rotate": load_rotate(), "frame_size": None,
     "visible": [], "scene": {"diff": 0.0, "changed_at": 0.0, "changes": 0, "pruned": 0},
     # Nearby-voice pathway (opt-in, off at every start): when a person is close to the
@@ -255,6 +284,11 @@ def capture_loop():
     while True:
         CAMERA_SWITCH.clear()
         raw = current_camera_source()
+        if raw is None:
+            with LOCK:
+                STATE["camera_ok"] = time.time() - STATE["browser_frame_at"] < 2.0
+            CAMERA_SWITCH.wait(0.5)
+            continue
         src = int(raw) if isinstance(raw, str) and raw.isdigit() else raw
         is_image = isinstance(src, str) and src.lower().endswith((".jpg", ".jpeg", ".png"))
         if is_image:   # a still image as a fake camera, handy for tests
@@ -266,6 +300,8 @@ def capture_loop():
                 frame = cv2.rotate(frame, ROTATE_CODES[rot])
             with LOCK:
                 STATE["frame"], STATE["frame_raw"], STATE["frame_at"], STATE["camera_ok"] = frame, raw_frame, time.time(), frame is not None
+                STATE["frame_raw_rotate"] = rot if rot in ROTATE_CODES else 0
+                STATE["bridge_frame_at"] = time.time() if frame is not None else STATE["bridge_frame_at"]
                 if frame is not None:
                     STATE["frame_size"] = [frame.shape[1], frame.shape[0]]
             time.sleep(0.5)
@@ -296,7 +332,8 @@ def capture_loop():
             with LOCK:
                 STATE["frame"] = frame
                 STATE["frame_raw"] = raw_frame
-                STATE["frame_at"] = time.time()
+                STATE["frame_raw_rotate"] = rot if rot in ROTATE_CODES else 0
+                STATE["frame_at"] = STATE["bridge_frame_at"] = time.time()
                 STATE["frame_size"] = [frame.shape[1], frame.shape[0]]
                 STATE["camera_ok"] = True
                 if n % 10 == 0:
@@ -742,20 +779,99 @@ def prune_queue(visible, text_present, force=False):
         log(f"dropped [{'scene change' if force else 'out of view'}] {item['kind']}: {item['label']!r}")
 
 
-def asl_pass(frame):
-    """One camera frame through the ASL recognizer. Speaks locally on a newly
-    confirmed stable letter; never touches the braille queue (see the module
-    docstring for why)."""
-    letter = ASL.process(frame)
+def sync_asl_state():
     s = ASL.state
     with LOCK:
         STATE["asl"].update(
-            available=s.available, label=s.label, stable_count=s.stable_count,
-            last_spoken=s.last_spoken, error=s.error,
+            available=s.available, classifier=ASL.classifier, stable_needed=ASL.stable_needed,
+            label=s.label, stable_count=s.stable_count, confidence=round(s.confidence, 3), moving=s.moving,
+            hand=s.hand, skeleton_image=s.skeleton_image, predictions=list(s.predictions),
+            last_letter=s.last_letter, error=s.error, hand_visible=s.hand_visible,
+            word_letters=list(s.word_letters),
+            recording=s.recording, record_progress=s.record_progress, record_target=s.record_target,
+            record_into=s.record_into, sample_set=s.sample_set,
+            pi_counts=dict(s.pi_counts), laptop_counts=dict(s.laptop_counts),
         )
-    if letter:
-        asl_mode.speak(letter)
-        log(f"asl: spoke {letter!r}")
+
+
+def match_asl_samples_to_camera():
+    """Bragi's KNN only works on samples recorded from the camera it's reading:
+    the Pi set for the Pi camera, the laptop set for the laptop camera."""
+    if not ASL.state.available:
+        return
+    want = "pi" if STATE["camera_source"] == "pi" and ASL.state.pi_counts else "laptop"
+    if ASL.state.sample_set != want:
+        ASL.set_sample_set(want)
+        log(f"asl: sample set -> {want} (follows the camera)")
+    sync_asl_state()
+
+
+TICK_SOUND = "/System/Library/Sounds/Tink.aiff"
+
+
+def tick():
+    """A soft click when a letter lands, so the signer's partner hears progress
+    without the letters being read out one by one."""
+    try:
+        subprocess.Popen(["afplay", "-v", "0.35", TICK_SOUND], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    except FileNotFoundError:
+        pass
+
+
+def decode_and_speak(letters):
+    """Letters -> the intended word (Jev picks from local candidates), then say it.
+    Runs on its own thread so a ~0.5 s network call never stalls recognition."""
+    with LOCK:
+        STATE["asl"]["decoding"] = True
+        previous = [w["word"] for w in STATE["asl"]["words"]]
+        names = [STATE["sound"].get("wake_name") or ""] + list(STATE["sound"].get("aliases") or [])
+    DECODER.set_names(names)
+    try:
+        r = DECODER.decode(letters, previous)
+    except Exception as exc:  # never lose the word: speak the raw letters
+        r = {"raw": "".join(letters), "word": "".join(letters).lower(), "source": "raw", "confidence": 0.0,
+             "candidates": [], "ms": 0, "error": str(exc)}
+    r["at"] = time.time()
+    with LOCK:
+        STATE["asl"]["words"] = (STATE["asl"]["words"] + [r])[-30:]
+        STATE["asl"]["decoding"] = False
+    asl_mode.speak(asl_words.spoken_form(r["word"]))
+    log(f"asl: {r['raw']} -> {r['word']!r} ({r['source']}, {r['confidence']:.2f}, {r['ms']} ms)"
+        + (f"  [{r['error']}]" if r.get("error") else ""))
+
+
+def train_cnn_space():
+    """Retrain the CNN's SPACE output from the recorded samples (a separate
+    process, ~40 s, so detection keeps running), then load the new model."""
+    try:
+        run = subprocess.run([sys.executable, os.path.join(HERE, "train_cnn_space.py")],
+                             capture_output=True, text=True, timeout=600)
+        lines = [l for l in (run.stdout + run.stderr).strip().splitlines() if l.strip()]
+        ok = run.returncode == 0
+        if ok:
+            ASL.reload_cnn()
+        result = " · ".join(l for l in lines if "held-out" in l) or (lines[-1] if lines else "done")
+    except Exception as exc:  # never leave the button stuck
+        ok, result = False, str(exc)
+    with LOCK:
+        STATE["asl"].update(cnn_training=False, cnn_train_result=("" if ok else "Failed: ") + result)
+    log(f"asl: CNN space training {'done' if ok else 'failed'}: {result}")
+
+
+def asl_pass(frame, rotate=0):
+    """One camera frame through the ASL recognizer. Letters build up a word
+    (with a soft tick each); the SPACE sign sends it off to be decoded and
+    spoken. Never touches the braille queue (see the module docstring).
+    `rotate`: how far clockwise this frame is from upright (for the CNN)."""
+    event = ASL.process(frame, rotate)
+    sync_asl_state()
+    if not event:
+        return
+    kind, value = event
+    if kind == "letter":
+        tick()
+    elif kind == "word":
+        threading.Thread(target=decode_and_speak, args=(value,), daemon=True).start()
 
 
 def detect_loop():
@@ -785,18 +901,20 @@ def detect_loop():
             # away from the orientation the KNN samples were recorded in
             # (a browser webcam feed, never rotated) -- see STATE["frame_raw"].
             with LOCK:
-                asl_frame = STATE["frame_raw"]
+                asl_frame, asl_rotate = STATE["frame_raw"], STATE["frame_raw_rotate"]
             if asl_frame is None:
-                asl_frame = frame
+                asl_frame, asl_rotate = frame, 0
             asl_small = (
                 cv2.resize(asl_frame, (960, int(asl_frame.shape[0] * 960 / asl_frame.shape[1])))
                 if asl_frame.shape[1] > 960 else asl_frame
             )
-            asl_pass(asl_small)
+            asl_pass(asl_small, asl_rotate)
             with LOCK:
                 STATE["detections"], STATE["best"] = [], None
                 STATE["text"].update(present=False, cells=0, box=None)
-            time.sleep(args.interval)
+            # Sample faster while recording so a letter takes seconds, not a
+            # minute, and for the CNN, whose smoothing and J/Z motion need it.
+            time.sleep(0.15 if ASL.state.recording else args.asl_interval if ASL.classifier == "cnn" else args.interval)
             continue
         t = time.time()
         dets = run_yolo(model, small)
@@ -900,6 +1018,17 @@ def pop_next():
 
 
 # ------------------------------------------------------------------ http
+def camera_feed_locked():
+    """Who delivered a frame in the last 2 s: this process's own capture
+    ("bridge"), a browser tab ("browser"), or nobody. Caller holds LOCK."""
+    now = time.time()
+    if now - STATE["bridge_frame_at"] < 2.0:
+        return "bridge"
+    if now - STATE["browser_frame_at"] < 2.0:
+        return "browser"
+    return "none"
+
+
 def snapshot():
     with LOCK:
         r = dict(STATE["read"])
@@ -908,10 +1037,13 @@ def snapshot():
             "recognizer": STATE["recognizer"], "sound": dict(STATE["sound"]),
             "camera_mode": STATE["camera_mode"], "asl": dict(STATE["asl"]),
             "camera_source": STATE["camera_source"], "camera_source_fixed": CAMERA_FIXED,
+            "camera_feed": camera_feed_locked(),
             "rotate": STATE["rotate"], "frame_size": STATE["frame_size"],
             "visible": list(STATE["visible"]), "scene": dict(STATE["scene"]),
             "proximity": {k: v for k, v in STATE["proximity"].items() if k != "grace_until"},
-            "camera_ok": STATE["camera_ok"], "frame_age_ms": int((time.time() - STATE["frame_at"]) * 1000) if STATE["frame_at"] else None,
+            # A stalled stream (cap.read() hung) leaves STATE["camera_ok"] stuck
+            # True, so only call it ok if someone actually delivered a frame lately.
+            "camera_ok": STATE["camera_ok"] and camera_feed_locked() != "none", "frame_age_ms": int((time.time() - STATE["frame_at"]) * 1000) if STATE["frame_at"] else None,
             "detections": STATE["detections"], "best": STATE["best"], "mode": STATE["mode"], "paused": STATE["paused"], "engine": STATE["engine"],
             "queue": list(STATE["queue"]), "playing": STATE["playing"], "stats": dict(STATE["stats"]),
             "text": dict(STATE["text"]), "read": dict(r, gap_left_ms=int(gap_left * 1000), read_gap_ms=int(args.read_gap * 1000)),
@@ -946,6 +1078,12 @@ class Handler(BaseHTTPRequestHandler):
         u = urlparse(self.path)
         if u.path == "/state":
             return self._json(200, snapshot())
+        if u.path == "/asl_hand":
+            # Just what the live hand view needs, small enough to poll ~20x/s.
+            with LOCK:
+                a = STATE["asl"]
+                body = {k: a[k] for k in ("hand", "skeleton_image", "predictions", "label", "confidence", "moving", "classifier")}
+            return self._json(200, body)
         if u.path == "/frame.jpg":
             with LOCK:
                 jpeg = STATE["jpeg"]
@@ -1080,15 +1218,89 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json(400, {"error": "value must be objects or asl"})
             if v == "asl":
                 ASL.ensure_loaded()
-                with LOCK:
-                    STATE["asl"].update(available=ASL.state.available, error=ASL.state.error)
+                match_asl_samples_to_camera()
+                sync_asl_state()
                 if not ASL.state.available:
                     return self._json(503, {"error": ASL.state.error or "ASL recognizer failed to load", **snapshot()})
+            if v == "objects":
+                ASL.cancel_recording()
             with LOCK:
                 STATE["camera_mode"] = v
                 if v == "objects":
-                    STATE["asl"].update(label=None, stable_count=0, last_spoken=None)
+                    STATE["asl"].update(label=None, stable_count=0, last_letter=None, recording=None, record_progress=0)
             log(f"camera mode -> {v}")
+            return self._json(200, snapshot())
+        if u.path == "/asl_classifier":
+            v = q.get("value", [""])[0]
+            if v not in ASL.CLASSIFIERS:
+                return self._json(400, {"error": "value must be cnn, knn or geometric"})
+            ok = ASL.set_classifier(v)
+            sync_asl_state()
+            if not ok:
+                return self._json(503, {"error": ASL.state.error or "ASL classifier failed to load", **snapshot()})
+            log(f"asl classifier -> {v}")
+            return self._json(200, snapshot())
+        if u.path == "/asl_train_space":
+            with LOCK:
+                busy = STATE["asl"]["cnn_training"]
+                STATE["asl"]["cnn_training"] = True
+            if not busy:
+                threading.Thread(target=train_cnn_space, daemon=True).start()
+                log("asl: teaching the CNN the recorded Space sign...")
+            return self._json(200, snapshot())
+        if u.path == "/asl_record":
+            letter = q.get("letter", [""])[0].upper()
+            try:
+                count = max(10, min(200, int(q.get("count", ["60"])[0])))
+            except ValueError:
+                return self._json(400, {"error": "count must be a number"})
+            if STATE["camera_mode"] != "asl":
+                return self._json(409, {"error": "switch to Bragi (camera_mode=asl) first", **snapshot()})
+            ASL.ensure_loaded()
+            # Samples belong to the camera that recorded them.
+            into = "pi" if STATE["camera_source"] == "pi" else "laptop"
+            try:
+                ASL.start_recording(letter, count, into)
+            except ValueError as exc:
+                return self._json(400, {"error": str(exc), **snapshot()})
+            sync_asl_state()
+            log(f"asl: recording {letter} into the {into} set ({count} samples)")
+            return self._json(200, snapshot())
+        if u.path == "/asl_word":
+            action = q.get("action", [""])[0]
+            if action == "finish":
+                letters = ASL.take_word()
+                if letters:
+                    threading.Thread(target=decode_and_speak, args=(letters,), daemon=True).start()
+            elif action == "backspace":
+                ASL.backspace()
+            elif action == "clear":
+                ASL.take_word()
+            elif action == "reset":
+                ASL.take_word()
+                with LOCK:
+                    STATE["asl"]["words"] = []
+            else:
+                return self._json(400, {"error": "action must be finish, backspace, clear or reset"})
+            sync_asl_state()
+            return self._json(200, snapshot())
+        if u.path == "/asl_record_cancel":
+            ASL.cancel_recording()
+            sync_asl_state()
+            return self._json(200, snapshot())
+        if u.path == "/asl_sample_set":
+            try:
+                ASL.set_sample_set(q.get("value", [""])[0])
+            except ValueError as exc:
+                return self._json(400, {"error": str(exc), **snapshot()})
+            sync_asl_state()
+            log(f"asl: sample set -> {ASL.state.sample_set}")
+            return self._json(200, snapshot())
+        if u.path == "/asl_record_clear":
+            letter = q.get("letter", [""])[0].upper() or None
+            ASL.clear_recorded(letter)
+            sync_asl_state()
+            log(f"asl: cleared recorded samples for {letter or 'every letter'}")
             return self._json(200, snapshot())
         if u.path == "/camera_source":
             v = q.get("value", [""])[0]
@@ -1100,6 +1312,7 @@ class Handler(BaseHTTPRequestHandler):
                 STATE["camera_source"] = v
             CAMERA_SWITCH.set()
             log(f"camera source -> {v}")
+            match_asl_samples_to_camera()
             return self._json(200, snapshot())
         if u.path == "/asl_frame":
             # Browser-captured frame (getUserMedia), for testing/demoing ASL mode
@@ -1116,6 +1329,8 @@ class Handler(BaseHTTPRequestHandler):
             frame = cv2.imdecode(np.frombuffer(body, dtype=np.uint8), cv2.IMREAD_COLOR)
             if frame is None:
                 return self._json(400, {"error": "could not decode image"})
+            with LOCK:
+                STATE["browser_frame_at"] = time.time()
             asl_pass(frame)
             return self._json(200, {"asl": dict(STATE["asl"])})
         if u.path == "/camera_frame":
@@ -1138,6 +1353,7 @@ class Handler(BaseHTTPRequestHandler):
             with LOCK:
                 STATE["frame"] = frame
                 STATE["frame_raw"] = frame  # never rotated server-side to begin with
+                STATE["frame_raw_rotate"] = 0
                 STATE["frame_at"] = now
                 STATE["frame_size"] = [frame.shape[1], frame.shape[0]]
                 STATE["camera_ok"] = True
