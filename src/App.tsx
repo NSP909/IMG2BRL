@@ -6,17 +6,15 @@ import { useHardware } from './hooks/useHardware';
 import { useBridge } from './hooks/useBridge';
 import { TopBar, type Status, type View } from './components/TopBar';
 import { LabView } from './components/LabView';
+import { SettingsView } from './components/SettingsView';
 import { Viewfinder, type LiveFeed } from './components/Viewfinder';
 import { bridgeSendAslFrame, bridgeSendCameraFrame, type AslStatus } from './lib/bridge';
 import { BragiPanel } from './components/BragiPanel';
 import { DetectionCard } from './components/DetectionCard';
-import { QueueCard } from './components/QueueCard';
-import { ComposeCard } from './components/ComposeCard';
 import { CellHero } from './components/CellHero';
 import { SequenceStrip } from './components/SequenceStrip';
-import { PinPanel, type Frame } from './components/PinPanel';
-import { SettingsCard, type Settings } from './components/SettingsCard';
-import { SoundPanel } from './components/SoundPanel';
+import { type Frame } from './components/PinPanel';
+import { type Settings } from './components/SettingsCard';
 
 /** How long the simulated detector "looks" before it answers. */
 const SCAN_MS = 1400;
@@ -52,14 +50,19 @@ export default function App() {
   // The laptop recognition bridge: camera vision or name-triggered sound -> queue.
   const bridge = useBridge();
 
-  // Two screens: the finger demo, and a lab for testing the camera models alone (#lab).
-  const [view, setViewState] = useState<View>(() => (window.location.hash === '#lab' ? 'lab' : 'main'));
+  // Three screens: the demo-facing finger view, a lab for testing the camera
+  // models alone (#lab), and the operational controls -- queue, raw text
+  // injection, GPIO pin states, timing -- that a demo audience shouldn't be
+  // looking at (#settings).
+  const hashToView = (hash: string): View => (hash === '#lab' ? 'lab' : hash === '#settings' ? 'settings' : 'main');
+  const viewToHash: Record<View, string> = { main: '', lab: '#lab', settings: '#settings' };
+  const [view, setViewState] = useState<View>(() => hashToView(window.location.hash));
   const setView = useCallback((v: View) => {
-    window.location.hash = v === 'lab' ? '#lab' : '';
+    window.location.hash = viewToHash[v];
     setViewState(v);
   }, []);
   useEffect(() => {
-    const onHash = () => setViewState(window.location.hash === '#lab' ? 'lab' : 'main');
+    const onHash = () => setViewState(hashToView(window.location.hash));
     window.addEventListener('hashchange', onHash);
     return () => window.removeEventListener('hashchange', onHash);
   }, []);
@@ -286,6 +289,19 @@ export default function App() {
 
       {view === 'lab' ? (
         <LabView bridge={bridge} onSend={sendNow} nowPlaying={detection && stream.index >= 0 && !stream.finished ? detection.label : null} />
+      ) : view === 'settings' ? (
+        <SettingsView
+          bridge={bridge}
+          hasMic={hasMic}
+          nowPlaying={nowPlaying}
+          onSend={sendText}
+          sendDisabled={scanning}
+          cell={stream.current}
+          frames={frames}
+          hardware={hardware}
+          settings={settings}
+          onSettingsChange={setSettings}
+        />
       ) : (
       <main className="layout">
         <div className="col" aria-label="Input">
@@ -300,14 +316,7 @@ export default function App() {
               onFrame={handleFrame}
             />
           )}
-          {hasMic && !aslMode && <SoundPanel bridge={bridge} />}
-          {!aslMode && (
-            <>
-              <DetectionCard detection={detection} cellCount={cells.length} />
-              <QueueCard bridge={bridge} nowPlaying={nowPlaying} />
-              <ComposeCard onSend={sendText} disabled={scanning} />
-            </>
-          )}
+          {!aslMode && <DetectionCard detection={detection} cellCount={cells.length} />}
         </div>
 
         {aslMode ? (
@@ -315,17 +324,10 @@ export default function App() {
             <BragiPanel asl={bridge.state?.asl ?? DEFAULT_ASL} history={aslHistory} onClear={clearAslHistory} />
           </div>
         ) : (
-          <>
-            <div className="col" aria-label="Output">
-              <CellHero stream={stream} />
-              <SequenceStrip text={detection?.label ?? ''} cells={cells} index={stream.index} onSelect={stream.seek} />
-            </div>
-
-            <div className="bottom">
-              <PinPanel cell={stream.current} frames={frames} hardware={hardware} />
-              <SettingsCard settings={settings} onChange={setSettings} />
-            </div>
-          </>
+          <div className="col" aria-label="Output">
+            <CellHero stream={stream} />
+            <SequenceStrip text={detection?.label ?? ''} cells={cells} index={stream.index} onSelect={stream.seek} />
+          </div>
         )}
       </main>
       )}
