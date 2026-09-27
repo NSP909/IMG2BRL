@@ -5,8 +5,7 @@ import { useCellStream } from './hooks/useCellStream';
 import { useHardware } from './hooks/useHardware';
 import { useBridge } from './hooks/useBridge';
 import { TopBar, type Status, type View } from './components/TopBar';
-import { LabView } from './components/LabView';
-import { SettingsView } from './components/SettingsView';
+import { DevView } from './components/DevView';
 import { Viewfinder, type LiveFeed } from './components/Viewfinder';
 import { bridgeSendAslFrame, bridgeSendCameraFrame, type AslStatus } from './lib/bridge';
 import { BragiPanel } from './components/BragiPanel';
@@ -51,12 +50,13 @@ export default function App() {
   // The laptop recognition bridge: camera vision or name-triggered sound -> queue.
   const bridge = useBridge();
 
-  // Three screens: the demo-facing finger view, a lab for testing the camera
-  // models alone (#lab), and the operational controls -- queue, raw text
-  // injection, GPIO pin states, timing -- that a demo audience shouldn't be
-  // looking at (#settings).
-  const hashToView = (hash: string): View => (hash === '#lab' ? 'lab' : hash === '#settings' ? 'settings' : 'main');
-  const viewToHash: Record<View, string> = { main: '', lab: '#lab', settings: '#settings' };
+  // Two screens: Main (what an audience should see) and Dev (raw model
+  // diagnostics, the queue's internals, GPIO pin states, timing, testing
+  // bypasses -- everything that used to be split across two separate "lab"
+  // and "settings" tabs for no good reason, since both were just "not the
+  // demo").
+  const hashToView = (hash: string): View => (hash === '#dev' ? 'dev' : 'main');
+  const viewToHash: Record<View, string> = { main: '', dev: '#dev' };
   const [view, setViewState] = useState<View>(() => hashToView(window.location.hash));
   const setView = useCallback((v: View) => {
     window.location.hash = viewToHash[v];
@@ -288,13 +288,13 @@ export default function App() {
         bridgeOffline={!bridge.online}
       />
 
-      {view === 'lab' ? (
-        <LabView bridge={bridge} onSend={sendNow} nowPlaying={detection && stream.index >= 0 && !stream.finished ? detection.label : null} />
-      ) : view === 'settings' ? (
-        <SettingsView
+      {view === 'dev' ? (
+        <DevView
           bridge={bridge}
           hasMic={hasMic}
-          onSend={sendText}
+          nowPlaying={detection && stream.index >= 0 && !stream.finished ? detection.label : null}
+          onSendNow={sendNow}
+          onSendText={sendText}
           sendDisabled={scanning}
           cell={stream.current}
           frames={frames}

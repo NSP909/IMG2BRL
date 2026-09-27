@@ -2,7 +2,7 @@ import { CameraIcon, LockIcon, MicIcon, StopIcon } from './Icons';
 import type { CameraMode, Recognizer } from '../lib/bridge';
 
 export type Status = 'idle' | 'scanning' | 'streaming' | 'paused' | 'complete';
-export type View = 'main' | 'lab' | 'settings';
+export type View = 'main' | 'dev';
 
 interface Props {
   status: Status;
@@ -72,9 +72,8 @@ export function TopBar({ status, index, total, live, host, view, onView, onStop,
 
       <div className="topbar__right">
         <nav className="tabs" aria-label="Screens">
-          <button type="button" className={`tab ${view === 'main' ? 'is-active' : ''}`} onClick={() => onView('main')}>Finger</button>
-          <button type="button" className={`tab ${view === 'lab' ? 'is-active' : ''}`} onClick={() => onView('lab')}>{hasCamera ? 'Camera lab' : 'Sound lab'}</button>
-          <button type="button" className={`tab ${view === 'settings' ? 'is-active' : ''}`} onClick={() => onView('settings')}>Settings</button>
+          <button type="button" className={`tab ${view === 'main' ? 'is-active' : ''}`} onClick={() => onView('main')}>Main</button>
+          <button type="button" className={`tab ${view === 'dev' ? 'is-active' : ''}`} onClick={() => onView('dev')}>Dev</button>
         </nav>
         {hasCamera && (
           <nav
