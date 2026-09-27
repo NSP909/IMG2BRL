@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { dotsToMask, encodeText } from './lib/braille';
-import { SAMPLES, makeDetection, manualDetection, type Detection } from './lib/detections';
+import { SAMPLES, cameraDetection, makeDetection, manualDetection, type Detection } from './lib/detections';
 import { useCellStream } from './hooks/useCellStream';
 import { useHardware } from './hooks/useHardware';
+import { useBridge } from './hooks/useBridge';
 import { TopBar, type Status } from './components/TopBar';
-import { Viewfinder } from './components/Viewfinder';
+import { Viewfinder, type LiveFeed } from './components/Viewfinder';
 import { DetectionCard } from './components/DetectionCard';
+import { QueueCard } from './components/QueueCard';
 import { ComposeCard } from './components/ComposeCard';
 import { CellHero } from './components/CellHero';
 import { SequenceStrip } from './components/SequenceStrip';
@@ -15,6 +17,8 @@ import { SettingsCard, type Settings } from './components/SettingsCard';
 /** How long the simulated detector "looks" before it answers. */
 const SCAN_MS = 1400;
 const FRAME_LOG_SIZE = 6;
+/** Pause between one queued message finishing and the next starting. */
+const QUEUE_GAP_MS = 700;
 
 /** `?text=Hello` in the URL plays that text on load; otherwise the first sample detection. */
 function initialDetection(): Detection {
@@ -36,6 +40,8 @@ export default function App() {
 
   // The real finger module: a Pi driving six solenoids, one per dot.
   const hardware = useHardware();
+  // The camera pipeline: Pi camera -> YOLO + OCR on the laptop -> queue.
+  const bridge = useBridge();
 
   // Detection → cells → timed stream. The browser is the clock; every cell
   // it shows is also sent to the Pi, so the screen and the finger agree.
@@ -50,8 +56,15 @@ export default function App() {
     autoPlay: true,
   });
 
+  // Capture: with the bridge online, queue what the camera sees now;
+  // otherwise fall back to the simulated detector.
+  const { capture: bridgeCapture, next: bridgeNext } = bridge;
   const capture = useCallback(() => {
     if (scanning) return;
+    if (bridge.online) {
+      void bridgeCapture();
+      return;
+    }
     setScanning(true);
     scanTimer.current = window.setTimeout(() => {
       const sample = SAMPLES[sampleCursor.current % SAMPLES.length];
@@ -59,11 +72,27 @@ export default function App() {
       setDetection(makeDetection(sample, 'simulated'));
       setScanning(false);
     }, SCAN_MS);
-  }, [scanning]);
+  }, [scanning, bridge.online, bridgeCapture]);
 
   useEffect(() => () => { if (scanTimer.current) window.clearTimeout(scanTimer.current); }, []);
 
   const sendText = useCallback((text: string) => setDetection(manualDetection(text)), []);
+
+  // Queue consumer: when nothing is playing, pull the next camera detection.
+  const queueLen = bridge.state?.queue.length ?? 0;
+  const idle = !scanning && !stream.playing && (stream.total === 0 || stream.finished || stream.index < 0);
+  useEffect(() => {
+    if (!bridge.online || queueLen === 0 || !idle) return;
+    let cancelled = false;
+    const timer = window.setTimeout(async () => {
+      const item = await bridgeNext();
+      if (!cancelled && item) setDetection(cameraDetection(item));
+    }, QUEUE_GAP_MS);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [bridge.online, queueLen, idle, bridgeNext]);
 
   // Every change of the displayed cell is one frame to the controller.
   const [frames, setFrames] = useState<Frame[]>([]);
@@ -103,14 +132,27 @@ export default function App() {
           ? 'paused'
           : 'idle';
 
+  const liveFeed: LiveFeed | null =
+    bridge.online && bridge.state
+      ? {
+          streamUrl: bridge.streamUrl,
+          cameraOk: bridge.state.camera_ok,
+          detections: bridge.state.detections,
+          best: bridge.state.best,
+          stats: bridge.state.stats,
+        }
+      : null;
+  const nowPlaying = detection.source === 'camera' && stream.index >= 0 && !stream.finished ? detection.label : null;
+
   return (
     <div className="app">
       <TopBar status={status} index={stream.index} total={stream.total} live={hardware.live} host={hardware.host} />
 
       <main className="layout">
         <div className="col" aria-label="Input">
-          <Viewfinder detection={scanning ? null : detection} scanning={scanning} onCapture={capture} />
+          <Viewfinder detection={scanning ? null : detection} scanning={scanning} onCapture={capture} live={liveFeed} />
           <DetectionCard detection={detection} cellCount={cells.length} />
+          <QueueCard bridge={bridge} nowPlaying={nowPlaying} />
           <ComposeCard onSend={sendText} disabled={scanning} />
         </div>
 
@@ -128,6 +170,7 @@ export default function App() {
       <footer className="foot small muted">
         Uncontracted braille, one 3 × 2 cell at a time. Pin numbering follows the standard cell: 1–3 down the left column, 4–6 down the right.
         {hardware.live ? ` Live on the Pi at ${hardware.host}.` : ' Hardware offline: simulating.'}
+        {bridge.online ? ' Camera bridge connected.' : ''}
       </footer>
     </div>
   );

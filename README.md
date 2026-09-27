@@ -70,6 +70,36 @@ Two seams are designed for replacement:
    drives its own timing, replace `useCellStream` with the controller's
    reported state so the screen mirrors the finger rather than leading it.
 
+## Detection in: Pi camera → laptop → queue → finger
+
+The Pi's camera module streams MJPEG (`camera-stream.service`, tcp 8555).
+A bridge process on the laptop pulls that stream, runs YOLO26 for objects
+and Tesseract for text, and keeps a queue of what to send to the finger.
+The web app shows the live annotated feed, pops the queue one message at a
+time, plays it, and drives the solenoids.
+
+```bash
+python3 pi/models/fetch_models.py yolo26n-seg.pt   # once: download the weights
+brew install tesseract                            # once: OCR
+python3 bridge/detect_bridge.py                   # laptop side, keep running
+npm run dev                                       # web app on http://127.0.0.1:5173
+```
+
+- **Auto mode** (default): a label that stays in view for two passes is
+  queued, with a 15 s cooldown per label so the same cup does not repeat.
+- **Manual mode**: nothing is queued until you press the capture button,
+  which queues whatever the bridge currently ranks best (text beats objects).
+- `--direct` makes the bridge play the queue on the Pi itself, for a demo
+  without the web app. Other knobs: `--conf`, `--ocr-conf`, `--interval`,
+  `--cooldown`, `--camera 0` to use the laptop webcam instead of the Pi.
+
+Bridge API on `:8765`: `GET /state`, `GET /frame.jpg`, `GET /stream.mjpg`,
+`POST /next`, `POST /capture`, `POST /queue?text=`, `POST /clear`,
+`POST /mode?value=auto|manual`. The dev server forwards `/bridge/*` to it.
+
+The Pi camera has one consumer at a time: stop the bridge before using
+`tools/pi_camera_view.sh`, and vice versa.
+
 ## Real hardware: Raspberry Pi Zero 2 W + 6 solenoids
 
 The finger module is a Raspberry Pi Zero 2 W driving six 12 V solenoids
@@ -83,9 +113,11 @@ pi/
   braille.py             Grade 1 encoder, same output as src/lib/braille.ts
   braille_play.py        play text from the Pi's command line
   deploy.sh              copy code + web build to the Pi and restart the service
-  systemd/               solenoid-server.service, unblock-wifi.service
+  systemd/               solenoid-server.service, camera-stream.service, unblock-wifi.service
   setup/                 first-boot config for a fresh Raspberry Pi OS card (USB gadget networking, SSH, user, Wi-Fi)
   models/                detection weights (not committed) + fetch_models.py to download them; see pi/models/README.md
+bridge/
+  detect_bridge.py       laptop: Pi camera -> YOLO26 + Tesseract -> queue -> web app / Pi
 tools/
   solenoid.sh            fire dots / play text / open the panel from a Mac
   pi_camera_view.sh      live view from the Pi camera (rpicam-vid → ffplay)

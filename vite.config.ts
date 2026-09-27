@@ -8,6 +8,8 @@ import react from '@vitejs/plugin-react';
  * involved. Override the Pi address with PI_HOST=host:port.
  */
 const PI = process.env.PI_HOST ?? '169.254.10.10:8080';
+/** The detection bridge (bridge/detect_bridge.py) runs on this laptop. */
+const BRIDGE = process.env.BRIDGE_HOST ?? '127.0.0.1:8765';
 
 export default defineConfig({
   plugins: [react()],
@@ -20,6 +22,11 @@ export default defineConfig({
         target: `http://${PI}`,
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/pi/, ''),
+      },
+      '/bridge': {
+        target: `http://${BRIDGE}`,
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/bridge/, ''),
       },
     },
   },

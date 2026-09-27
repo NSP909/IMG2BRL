@@ -5,7 +5,7 @@
  */
 
 export type DetectionKind = 'object' | 'text';
-export type DetectionSource = 'simulated' | 'manual';
+export type DetectionSource = 'simulated' | 'manual' | 'camera';
 
 /** Normalised bounding box, all values 0–1 relative to the frame. */
 export interface Box {
@@ -51,4 +51,9 @@ export function manualDetection(text: string): Detection {
     { kind: 'text', label: text, confidence: 1, box: { x: 0.14, y: 0.4, w: 0.72, h: 0.2 } },
     'manual',
   );
+}
+
+/** A detection produced by the camera bridge (already carries its own id and time). */
+export function cameraDetection(item: { id: string; at: number; kind: DetectionKind; label: string; confidence: number; box: Box }): Detection {
+  return { id: item.id, source: 'camera', at: item.at, kind: item.kind, label: item.label, confidence: item.confidence, box: item.box };
 }

@@ -6,7 +6,7 @@ PI="${1:-169.254.10.10}"
 HERE="$(cd "$(dirname "$0")" && pwd)"
 scp -q "$HERE"/solenoid_server.py "$HERE"/braille.py "$HERE"/braille_play.py pi@"$PI":/home/pi/
 scp -q "$HERE"/systemd/*.service pi@"$PI":/tmp/
-ssh pi@"$PI" 'sudo mv /tmp/solenoid-server.service /tmp/unblock-wifi.service /etc/systemd/system/ && sudo systemctl daemon-reload && sudo systemctl enable --now unblock-wifi.service solenoid-server.service && sudo systemctl restart solenoid-server.service && chmod +x ~/braille_play.py'
+ssh pi@"$PI" 'sudo mv /tmp/solenoid-server.service /tmp/unblock-wifi.service /tmp/camera-stream.service /etc/systemd/system/ && sudo systemctl daemon-reload && sudo systemctl enable --now unblock-wifi.service solenoid-server.service camera-stream.service && sudo systemctl restart solenoid-server.service && chmod +x ~/braille_play.py'
 if [ -d "$HERE/../dist" ]; then
   ssh pi@"$PI" 'rm -rf ~/www && mkdir -p ~/www'
   scp -q -r "$HERE"/../dist/. pi@"$PI":/home/pi/www/

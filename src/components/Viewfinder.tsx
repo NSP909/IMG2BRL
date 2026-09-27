@@ -1,22 +1,38 @@
 import type { Detection } from '../lib/detections';
+import type { BridgeDetection, BridgeStats } from '../lib/bridge';
 import { useCamera } from '../hooks/useCamera';
 import { CameraIcon, ScanIcon } from './Icons';
+
+/** What the viewfinder shows when the Pi camera bridge is connected. */
+export interface LiveFeed {
+  streamUrl: string;
+  cameraOk: boolean;
+  detections: BridgeDetection[];
+  best: BridgeDetection | null;
+  stats: BridgeStats;
+}
 
 interface Props {
   detection: Detection | null;
   scanning: boolean;
   onCapture(): void;
+  live?: LiveFeed | null;
 }
 
-export function Viewfinder({ detection, scanning, onCapture }: Props) {
+export function Viewfinder({ detection, scanning, onCapture, live }: Props) {
   const cam = useCamera();
-  const live = cam.state === 'on';
+  const webcam = cam.state === 'on';
+  const isLive = Boolean(live);
   const box = detection?.box;
 
   return (
     <section className="card viewfinder" aria-label="Camera">
-      <div className={`vf__frame ${live ? 'vf__frame--live' : ''}`}>
-        <video ref={cam.videoRef} className="vf__video" muted playsInline hidden={!live} />
+      <div className={`vf__frame ${isLive || webcam ? 'vf__frame--live' : ''}`}>
+        {live ? (
+          <img className="vf__video" src={live.streamUrl} alt="Live view from the Pi camera" />
+        ) : (
+          <video ref={cam.videoRef} className="vf__video" muted playsInline hidden={!webcam} />
+        )}
 
         <span className="vf__corner vf__corner--tl" />
         <span className="vf__corner vf__corner--tr" />
@@ -25,40 +41,69 @@ export function Viewfinder({ detection, scanning, onCapture }: Props) {
 
         {scanning && <div className="vf__scan" aria-hidden />}
 
-        {!scanning && detection && box && (
-          <div
-            key={detection.id}
-            className="vf__box"
-            style={{ left: `${box.x * 100}%`, top: `${box.y * 100}%`, width: `${box.w * 100}%`, height: `${box.h * 100}%` }}
-          >
-            <span className="vf__tag">
-              {detection.kind} · {Math.round(detection.confidence * 100)}%
-            </span>
-          </div>
-        )}
+        {live
+          ? live.detections.map((d, i) => {
+              const isBest = live.best !== null && d.label === live.best.label && d.kind === live.best.kind;
+              return (
+                <div
+                  key={`${d.kind}-${d.label}-${i}`}
+                  className={`vf__box vf__box--${d.kind} ${isBest ? '' : 'vf__box--dim'}`}
+                  style={{ left: `${d.box.x * 100}%`, top: `${d.box.y * 100}%`, width: `${d.box.w * 100}%`, height: `${d.box.h * 100}%` }}
+                >
+                  <span className="vf__tag">
+                    {d.kind === 'text' ? `“${d.label}”` : d.label} · {Math.round(d.confidence * 100)}%
+                  </span>
+                </div>
+              );
+            })
+          : !scanning && detection && box && (
+              <div
+                key={detection.id}
+                className="vf__box"
+                style={{ left: `${box.x * 100}%`, top: `${box.y * 100}%`, width: `${box.w * 100}%`, height: `${box.h * 100}%` }}
+              >
+                <span className="vf__tag">
+                  {detection.kind} · {Math.round(detection.confidence * 100)}%
+                </span>
+              </div>
+            )}
 
         <div className="vf__hint">
-          {scanning ? 'Looking for objects and text…' : live ? 'Live preview · detection is simulated' : 'Simulated frame · detection is simulated'}
+          {live
+            ? live.cameraOk
+              ? `Pi camera · ${live.stats.model} on ${live.stats.device} · ${live.stats.infer_ms} ms${live.stats.ocr_ms ? ` · OCR ${live.stats.ocr_ms} ms` : ''}`
+              : 'Bridge running · waiting for the Pi camera'
+            : scanning
+              ? 'Looking for objects and text…'
+              : webcam
+                ? 'Live preview · detection is simulated'
+                : 'Simulated frame · detection is simulated'}
         </div>
       </div>
 
       <div className="vf__bar">
-        <button type="button" className="btn btn--primary" onClick={onCapture} disabled={scanning}>
+        <button type="button" className="btn btn--primary" onClick={onCapture} disabled={scanning || (isLive && !live?.best)}>
           <ScanIcon />
-          {scanning ? 'Scanning…' : 'Capture frame'}
+          {scanning ? 'Scanning…' : isLive ? (live?.best ? `Send “${live.best.label}”` : 'Nothing in view') : 'Capture frame'}
         </button>
         <div className="vf__bar-right">
-          {cam.error && <span className="small muted">{cam.error}</span>}
-          <button
-            type="button"
-            className="btn"
-            onClick={live ? cam.stop : cam.start}
-            disabled={cam.state === 'starting'}
-            aria-pressed={live}
-          >
-            <CameraIcon />
-            {live ? 'Stop camera' : cam.state === 'starting' ? 'Starting…' : 'Use camera'}
-          </button>
+          {isLive ? (
+            <span className="small muted">{live?.detections.length ?? 0} in view</span>
+          ) : (
+            <>
+              {cam.error && <span className="small muted">{cam.error}</span>}
+              <button
+                type="button"
+                className="btn"
+                onClick={webcam ? cam.stop : cam.start}
+                disabled={cam.state === 'starting'}
+                aria-pressed={webcam}
+              >
+                <CameraIcon />
+                {webcam ? 'Stop camera' : cam.state === 'starting' ? 'Starting…' : 'Use camera'}
+              </button>
+            </>
+          )}
         </div>
       </div>
     </section>
