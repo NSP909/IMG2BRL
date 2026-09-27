@@ -85,6 +85,7 @@ pi/
   deploy.sh              copy code + web build to the Pi and restart the service
   systemd/               solenoid-server.service, unblock-wifi.service
   setup/                 first-boot config for a fresh Raspberry Pi OS card (USB gadget networking, SSH, user, Wi-Fi)
+  models/                detection weights (not committed) + fetch_models.py to download them; see pi/models/README.md
 tools/
   solenoid.sh            fire dots / play text / open the panel from a Mac
   pi_camera_view.sh      live view from the Pi camera (rpicam-vid → ffplay)
