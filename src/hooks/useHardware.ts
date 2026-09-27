@@ -9,6 +9,7 @@ import {
   saveEnabled,
   sendAllOff,
   sendCell,
+  sendLock,
   servedFromPi,
   type HardwareStatus,
 } from '../lib/hardware';
@@ -31,6 +32,9 @@ export interface Hardware {
   status: HardwareStatus | null;
   /** Live when the user wants real pins and the Pi answers. */
   live: boolean;
+  /** The Pi's safety latch: while locked nothing moves, whatever is sent. */
+  locked: boolean;
+  setLocked(locked: boolean): void;
   sendCell(mask: number, holdMs: number): void;
   allOff(): void;
 }
@@ -85,9 +89,24 @@ export function useHardware(): Hardware {
     sendAllOff(baseUrl).catch(fail);
   }, [baseUrl, enabled, fail]);
 
+  const locked = status?.locked ?? false;
+
+  const setLocked = useCallback(
+    (on: boolean) => {
+      // Optimistic: reflect the latch immediately, then confirm from the Pi.
+      setStatus((s) => (s ? { ...s, locked: on } : s));
+      sendLock(baseUrl, on)
+        .then((s) => {
+          if (s) setStatus(s);
+        })
+        .catch(fail);
+    },
+    [baseUrl, fail],
+  );
+
   const send = useCallback(
     (mask: number, holdMs: number) => {
-      if (!enabled) return;
+      if (!enabled || locked) return;
       if (blipTimer.current) {
         window.clearTimeout(blipTimer.current);
         blipTimer.current = null;
@@ -105,7 +124,7 @@ export function useHardware(): Hardware {
         raise();
       }
     },
-    [baseUrl, enabled, fail],
+    [baseUrl, enabled, locked, fail],
   );
 
   // Pins down when the page goes away or is hidden.
@@ -133,7 +152,9 @@ export function useHardware(): Hardware {
     setEnabled,
     online,
     status,
-    live: enabled && online,
+    live: enabled && online && !locked,
+    locked,
+    setLocked,
     sendCell: send,
     allOff,
   };

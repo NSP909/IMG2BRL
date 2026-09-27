@@ -50,6 +50,8 @@ export interface VlmResult {
 
 export interface BridgeState {
   engine: Engine;
+  /** Camera lock: no detection, no vision calls, no queueing while true. */
+  paused: boolean;
   vlm: VlmResult;
   tesseract: BridgeDetection[];
   camera_ok: boolean;
@@ -135,4 +137,8 @@ export function bridgeSetEngine(baseUrl: string, engine: Engine): Promise<Bridge
 /** Ask for one OpenAI pass right now. */
 export function bridgeAnalyze(baseUrl: string): Promise<{ ok: boolean }> {
   return post<{ ok: boolean }>(baseUrl, '/analyze');
+}
+
+export function bridgeSetPaused(baseUrl: string, paused: boolean): Promise<BridgeState> {
+  return post<BridgeState>(baseUrl, `/pause?value=${paused ? 1 : 0}`);
 }

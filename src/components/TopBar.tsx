@@ -1,4 +1,4 @@
-import { StopIcon } from './Icons';
+import { CameraIcon, LockIcon, StopIcon } from './Icons';
 
 export type Status = 'idle' | 'scanning' | 'streaming' | 'paused' | 'complete';
 export type View = 'main' | 'lab';
@@ -14,6 +14,12 @@ interface Props {
   onView(view: View): void;
   /** Stop playback, drop the pins, clear the queue. */
   onStop(): void;
+  /** Pin lock: enforced on the Pi, nothing moves until released. */
+  pinsLocked: boolean;
+  onLockPins(locked: boolean): void;
+  /** Camera lock: the bridge stops detecting and queueing. */
+  cameraPaused: boolean;
+  onPauseCamera(paused: boolean): void;
 }
 
 const STATUS_TEXT: Record<Status, string> = {
@@ -24,7 +30,7 @@ const STATUS_TEXT: Record<Status, string> = {
   complete: 'Message complete',
 };
 
-export function TopBar({ status, index, total, live, host, view, onView, onStop }: Props) {
+export function TopBar({ status, index, total, live, host, view, onView, onStop, pinsLocked, onLockPins, cameraPaused, onPauseCamera }: Props) {
   const showCount = status === 'streaming' || status === 'paused';
   return (
     <header className="topbar">
@@ -53,14 +59,36 @@ export function TopBar({ status, index, total, live, host, view, onView, onStop 
           <button type="button" className={`tab ${view === 'main' ? 'is-active' : ''}`} onClick={() => onView('main')}>Finger</button>
           <button type="button" className={`tab ${view === 'lab' ? 'is-active' : ''}`} onClick={() => onView('lab')}>Camera lab</button>
         </nav>
-        <span className="pill" title={live ? `Solenoid cell on the Pi at ${host}` : 'The Pi is not driving pins right now'}>
-          <span className={`pill__dot ${live ? 'pill__dot--live' : 'pill__dot--sim'}`} />
-          {live ? 'Live hardware' : 'Simulated hardware'}
+        <span className="pill" title={pinsLocked ? 'Pins are locked on the Pi' : live ? `Solenoid cell on the Pi at ${host}` : 'The Pi is not driving pins right now'}>
+          <span className={`pill__dot ${pinsLocked ? 'pill__dot--locked' : live ? 'pill__dot--live' : 'pill__dot--sim'}`} />
+          {pinsLocked ? 'Pins locked' : live ? 'Live hardware' : 'Simulated hardware'}
         </span>
-        <button type="button" className="btn btn--stop" onClick={onStop} title="Stop playback, drop all pins, clear the queue">
-          <StopIcon />
-          Stop
-        </button>
+        <div className="controls" role="group" aria-label="Safety controls">
+          <button
+            type="button"
+            className={`btn btn--latch ${pinsLocked ? 'is-on' : ''}`}
+            onClick={() => onLockPins(!pinsLocked)}
+            aria-pressed={pinsLocked}
+            title={pinsLocked ? 'Pins are locked on the Pi. Click to unlock.' : 'Lock the pins: the Pi refuses every actuation until unlocked.'}
+          >
+            <LockIcon />
+            {pinsLocked ? 'Pins locked' : 'Lock pins'}
+          </button>
+          <button
+            type="button"
+            className={`btn btn--latch btn--latch-amber ${cameraPaused ? 'is-on' : ''}`}
+            onClick={() => onPauseCamera(!cameraPaused)}
+            aria-pressed={cameraPaused}
+            title={cameraPaused ? 'Camera is paused: no detection or queueing. Click to resume.' : 'Pause the camera: stop detecting, calling the vision model and queueing.'}
+          >
+            <CameraIcon />
+            {cameraPaused ? 'Camera paused' : 'Pause camera'}
+          </button>
+          <button type="button" className="btn btn--stop" onClick={onStop} title="Stop playback now, drop all pins, clear the queue">
+            <StopIcon />
+            Stop
+          </button>
+        </div>
       </div>
     </header>
   );

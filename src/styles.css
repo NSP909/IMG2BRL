@@ -601,3 +601,12 @@ input[type='range'] { width: 100%; accent-color: var(--ink); margin: 0; }
 .lab__engine { display: flex; flex-direction: column; gap: 8px; }
 .lab__log { margin: 0; white-space: pre-wrap; max-height: 160px; overflow: auto; line-height: 1.5; }
 .lab__raw { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 60%; }
+
+/* ---------------- safety latches ---------------- */
+.controls { display: inline-flex; gap: 8px; align-items: center; }
+.btn--latch { height: 32px; padding: 0 12px; font-size: 13px; }
+.btn--latch.is-on { background: #b3261e; color: #fff; border-color: #b3261e; }
+.btn--latch.is-on:hover { background: #8f1d17; border-color: #8f1d17; }
+.btn--latch-amber.is-on { background: var(--warn); border-color: var(--warn); color: #fff; }
+.btn--latch-amber.is-on:hover { background: #8f6320; border-color: #8f6320; }
+.pill__dot--locked { background: #b3261e; }

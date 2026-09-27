@@ -18,6 +18,7 @@ HTTP on :8765 (CORS open):
   POST /mode?value=auto|manual
   POST /engine?value=tesseract|vlm|both|none   text/classification engine (vlm = Claude, or OpenAI)
   POST /analyze               run one vision-model pass right now
+  POST /pause?value=1|0       camera lock: stop detection, vision calls and queueing
 """
 import argparse, collections, json, os, re, subprocess, sys, tempfile, threading, time
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
@@ -90,6 +91,7 @@ STATE = {
     "stats": {"fps": 0.0, "infer_ms": 0, "ocr_ms": 0, "model": os.path.basename(args.weights), "device": args.device, "passes": 0},
     "log": collections.deque(maxlen=40),
     "engine": args.ocr,
+    "paused": False,            # camera lock: no detection, no vision-model calls, no queueing
     "tesseract": [],            # last Tesseract lines
     "vlm": {"available": bool(VLM_KEY), "provider": VLM_PROVIDER, "model": None, "kind": None, "label": "", "text": "", "object": "",
             "confidence": 0.0, "latency_ms": 0, "at": 0, "raw": "", "error": None, "passes": 0},
@@ -385,7 +387,8 @@ def vlm_loop():
         with LOCK:
             frame = STATE["frame"]
             engine = STATE["engine"]
-        if frame is None or (engine not in ("vlm", "both") and not forced):
+            paused = STATE["paused"]
+        if frame is None or paused or (engine not in ("vlm", "both") and not forced):
             continue
         res, err = run_vlm(model, frame)
         with LOCK:
@@ -468,8 +471,18 @@ def detect_loop():
     while True:
         with LOCK:
             frame = STATE["frame"]
+            paused = STATE["paused"]
         if frame is None:
             time.sleep(0.2)
+            continue
+        if paused:
+            ok, buf = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 70])
+            with LOCK:
+                STATE["detections"] = []
+                STATE["best"] = None
+                if ok:
+                    STATE["jpeg"] = buf.tobytes()
+            time.sleep(0.3)
             continue
         t = time.time()
         dets = run_yolo(model, frame)
@@ -562,7 +575,7 @@ def snapshot():
             "detections": STATE["detections"], "best": STATE["best"], "mode": STATE["mode"],
             "queue": list(STATE["queue"]), "playing": STATE["playing"], "stats": dict(STATE["stats"]),
             "direct": args.direct, "log": list(STATE["log"])[-8:],
-            "engine": STATE["engine"], "vlm": dict(STATE["vlm"]), "tesseract": list(STATE["tesseract"]),
+            "engine": STATE["engine"], "paused": STATE["paused"], "vlm": dict(STATE["vlm"]), "tesseract": list(STATE["tesseract"]),
         }
 
 
@@ -624,9 +637,18 @@ class Handler(BaseHTTPRequestHandler):
         q = parse_qs(u.query)
         if u.path == "/next":
             return self._json(200, {"item": pop_next(), "remaining": len(STATE["queue"])})
+        if u.path == "/pause":
+            v = q.get("value", ["1"])[0]
+            with LOCK:
+                STATE["paused"] = v not in ("0", "false", "off")
+                paused = STATE["paused"]
+            log("CAMERA PAUSED" if paused else "camera resumed")
+            return self._json(200, snapshot())
         if u.path == "/capture":
             with LOCK:
                 best = STATE["best"]
+                if STATE["paused"]:
+                    return self._json(423, {"item": None, "error": "camera is paused"})
             if not best:
                 return self._json(200, {"item": None, "error": "nothing detected in the current frame"})
             return self._json(200, {"item": enqueue(best, "capture")})

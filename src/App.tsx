@@ -95,7 +95,7 @@ export default function App() {
   const queueLen = bridge.state?.queue.length ?? 0;
   const idle = !scanning && !stream.playing && (stream.total === 0 || stream.finished || stream.index < 0);
   useEffect(() => {
-    if (view !== 'main' || !bridge.online || queueLen === 0 || !idle) return;
+    if (view !== 'main' || !bridge.online || queueLen === 0 || !idle || hardware.locked) return;
     let cancelled = false;
     const timer = window.setTimeout(async () => {
       const item = await bridgeNext();
@@ -105,7 +105,7 @@ export default function App() {
       cancelled = true;
       window.clearTimeout(timer);
     };
-  }, [view, bridge.online, queueLen, idle, bridgeNext]);
+  }, [view, bridge.online, queueLen, idle, bridgeNext, hardware.locked]);
 
   // Every change of the displayed cell is one frame to the controller.
   const [frames, setFrames] = useState<Frame[]>([]);
@@ -134,6 +134,19 @@ export default function App() {
   useEffect(() => {
     if (!stream.playing) allOff();
   }, [stream.playing, allOff]);
+
+  // Pin lock: stop what is playing, then latch the Pi so nothing can move.
+  const { setLocked } = hardware;
+  const lockPins = useCallback(
+    (locked: boolean) => {
+      if (locked) {
+        stream.pause();
+        allOff();
+      }
+      setLocked(locked);
+    },
+    [stream, allOff, setLocked],
+  );
 
   // Stop everything: playback, pins, queue, and any scan in progress.
   const { clear: bridgeClear } = bridge;
@@ -174,7 +187,20 @@ export default function App() {
 
   return (
     <div className="app">
-      <TopBar status={status} index={stream.index} total={stream.total} live={hardware.live} host={hardware.host} view={view} onView={setView} onStop={stop} />
+      <TopBar
+        status={status}
+        index={stream.index}
+        total={stream.total}
+        live={hardware.live}
+        host={hardware.host}
+        view={view}
+        onView={setView}
+        onStop={stop}
+        pinsLocked={hardware.locked}
+        onLockPins={lockPins}
+        cameraPaused={bridge.paused}
+        onPauseCamera={bridge.setPaused}
+      />
 
       {view === 'lab' ? (
         <LabView bridge={bridge} onSend={sendNow} nowPlaying={stream.index >= 0 && !stream.finished ? detection.label : null} />

@@ -92,8 +92,18 @@ The prompt sent with each frame is `bridge/prompt.txt`; edit it freely. An
 `OPENAI_API_KEY` in `bridge/.env` selects OpenAI instead (`--vlm-provider`).
 Engines can be switched live from the **Camera lab** screen (top bar), which
 shows the feed, every YOLO detection, the Claude answer with latency, the
-Tesseract lines, and lets you send any of them to the finger. The **Stop**
-button in the top bar halts playback, drops all pins and clears the queue.
+Tesseract lines, and lets you send any of them to the finger.
+
+### Safety controls (top bar)
+
+| Control | What it does | Enforced where |
+| --- | --- | --- |
+| **Lock pins** | Drops every pin and latches the Pi: `cell`, `pulse`, `on` and `braille` return HTTP 423 until unlocked, whoever sends them. | Pi (`POST /lock?value=1|0`) |
+| **Pause camera** | The bridge keeps showing the picture but stops detecting, stops calling the vision model, queues nothing, and refuses capture. | Bridge (`POST /pause?value=1|0`) |
+| **Stop** | One-shot: halts playback now, drops all pins, clears the queue. | App + Pi + bridge |
+
+Both latches live on the devices, so they survive a page reload and also
+block the command-line tools.
 
 - **Auto mode** (default): a label that stays in view for two passes is
   queued, with a 15 s cooldown per label so the same cup does not repeat.
@@ -176,6 +186,7 @@ and an address field if you want to point it somewhere else.
 | `POST /cell?mask=19&ms=900` | raise exactly the dots in a 6-bit mask (bit n−1 = dot n) for `ms` |
 | `POST /pulse/<n>?ms=150` · `/on/<n>` · `/off/<n>` | one dot |
 | `POST /alloff` | everything down, stop playback |
+| `POST /lock?value=1\|0` | safety latch: while locked every actuation returns 423 |
 | `POST /braille?text=Hello&cell_ms=900&space_ms=500&gap_ms=120` | play text on the Pi's clock |
 | `POST /braille/stop` | stop |
 | `GET /state` · `GET /encode?text=` | status · cell sequence for a text |

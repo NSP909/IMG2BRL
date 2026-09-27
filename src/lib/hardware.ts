@@ -11,6 +11,8 @@ export interface HardwareStatus {
   mask: number;
   maxOnMs: number;
   braillePlaying: boolean;
+  /** Safety latch on the Pi: while true it refuses every actuation. */
+  locked: boolean;
 }
 
 export const DEFAULT_BASE_URL = 'http://169.254.10.10:8080';
@@ -107,10 +109,25 @@ export async function fetchStatus(baseUrl: string, timeoutMs = 1500): Promise<Ha
       mask: Number(j.mask) || 0,
       maxOnMs: Number(j.max_on_ms) || 2000,
       braillePlaying: Boolean(j.braille?.playing),
+      locked: Boolean(j.locked),
     };
   } catch {
     return null;
   } finally {
     window.clearTimeout(timer);
   }
+}
+
+/** Engage or release the Pi's pin lock. */
+export async function sendLock(baseUrl: string, locked: boolean): Promise<HardwareStatus | null> {
+  const res = await fetch(`${baseUrl}/lock?value=${locked ? 1 : 0}`, { method: 'POST' });
+  if (!res.ok) return null;
+  const j = await res.json();
+  return {
+    pins: Array.isArray(j.pins) ? j.pins : [],
+    mask: Number(j.mask) || 0,
+    maxOnMs: Number(j.max_on_ms) || 2000,
+    braillePlaying: Boolean(j.braille?.playing),
+    locked: Boolean(j.locked),
+  };
 }

@@ -6,6 +6,7 @@ import {
   bridgeNext,
   bridgeSetEngine,
   bridgeSetMode,
+  bridgeSetPaused,
   fetchBridgeState,
   loadBridgeUrl,
   streamUrl,
@@ -29,8 +30,11 @@ export interface Bridge {
   setMode(mode: 'auto' | 'manual'): void;
   clear(): void;
   setEngine(engine: Engine): void;
-  /** Run one OpenAI pass now. */
+  /** Run one vision-model pass now. */
   analyze(): void;
+  /** Camera lock. */
+  paused: boolean;
+  setPaused(paused: boolean): void;
 }
 
 export function useBridge(): Bridge {
@@ -99,5 +103,26 @@ export function useBridge(): Bridge {
     bridgeAnalyze(baseUrl).catch(() => {});
   }, [baseUrl]);
 
-  return { baseUrl, online, state, streamUrl: streamUrl(baseUrl), capture, next, setMode, clear, setEngine, analyze };
+  const setPaused = useCallback(
+    (paused: boolean) => {
+      setState((s) => (s ? { ...s, paused } : s));
+      bridgeSetPaused(baseUrl, paused).then(setState).catch(() => {});
+    },
+    [baseUrl],
+  );
+
+  return {
+    baseUrl,
+    online,
+    state,
+    streamUrl: streamUrl(baseUrl),
+    capture,
+    next,
+    setMode,
+    clear,
+    setEngine,
+    analyze,
+    paused: state?.paused ?? false,
+    setPaused,
+  };
 }

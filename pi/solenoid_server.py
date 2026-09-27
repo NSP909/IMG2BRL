@@ -13,6 +13,7 @@ HTTP on port 8080 (CORS open, so the visualizer can call it from anywhere):
   POST /pulse/<n>?ms=150          pulse dot n
   POST /on/<n>  /off/<n>          hold / release dot n (auto-off after max_on_ms)
   POST /alloff                    everything down, stop braille playback
+  POST /lock?value=1|0            safety latch: while locked, cell/pulse/on/braille return 423
   POST /braille?text=Hello&cell_ms=900&space_ms=500&gap_ms=120&caps=1&loop=0
                                   play text as braille, one cell at a time, on the Pi's clock
   POST /braille/stop
@@ -86,6 +87,7 @@ class Solenoid:
 
 SOLENOIDS = [Solenoid(i + 1, p) for i, p in enumerate(cfg["pins"])]
 LOG = []
+LOCKED = False   # safety latch: while True every actuation request is refused (HTTP 423)
 
 
 def log(msg):
@@ -225,6 +227,7 @@ a{color:var(--acc)}
  <label>Pulse <input type=range id=ms min=30 max=1000 step=10 value=150> <b id=msv>150 ms</b></label>
  <label><input type=checkbox id=hold> Hold mode (max <span id=maxon>2000</span> ms)</label>
  <button class=alloff onclick="post('/alloff')">ALL OFF</button>
+ <button class=btn id=lockbtn style="background:#374151" onclick="toggleLock()">Lock pins</button>
 </div>
 <div class=row>
  <input class=txt id=text placeholder="Type text to play as braille, e.g. Hello 42">
@@ -239,12 +242,14 @@ const grid=document.getElementById('grid'),ms=document.getElementById('ms'),msv=
 const ORDER=[1,4,2,5,3,6];let btns={};
 function post(p){return fetch(p,{method:'POST'}).then(r=>r.json()).then(render).catch(()=>setConn(false));}
 function setConn(ok){document.getElementById('dot').className='dot'+(ok?'':' bad');document.getElementById('conn').textContent=ok?'connected to Pi':'Pi not reachable';}
+let locked=false;function toggleLock(){post('/lock?value='+(locked?0:1));}
 function playText(){const t=document.getElementById('text').value.trim();if(!t)return;post('/braille?text='+encodeURIComponent(t)+'&cell_ms='+document.getElementById('cellms').value);}
 function render(st){setConn(true);if(!Object.keys(btns).length){ORDER.forEach(id=>{const s=st.solenoids[id-1];const b=document.createElement('button');b.className='sol';b.innerHTML=`Dot ${s.id}<small>GPIO ${s.pin}</small>`;
  b.onpointerdown=e=>{e.preventDefault();if(hold.checked){b.setPointerCapture(e.pointerId);post('/on/'+s.id);}else post(`/pulse/${s.id}?ms=${ms.value}`);};
  const rel=()=>{if(hold.checked)post('/off/'+s.id);};b.onpointerup=rel;b.onpointercancel=rel;b.onpointerleave=e=>{if(hold.checked&&e.buttons)rel();};
  grid.appendChild(b);btns[id]=b;});document.getElementById('maxon').textContent=st.max_on_ms;ms.value=st.pulse_ms;msv.textContent=st.pulse_ms+' ms';}
  st.solenoids.forEach(s=>btns[s.id].classList.toggle('on',s.on));document.getElementById('now').textContent=String.fromCodePoint(0x2800+st.mask);
+ locked=!!st.locked;const lb=document.getElementById('lockbtn');lb.textContent=locked?'🔒 PINS LOCKED — click to unlock':'Lock pins';lb.style.background=locked?'#b3261e':'#374151';
  document.getElementById('log').textContent=(st.log||[]).slice(-6).reverse().join('\\n');}
 ms.oninput=()=>msv.textContent=ms.value+' ms';
 document.addEventListener('keydown',e=>{if(e.target.tagName==='INPUT')return;const n=parseInt(e.key);if(n>=1&&n<=6&&!e.repeat)post(`/pulse/${n}?ms=${ms.value}`);if(e.key==='Escape')post('/alloff');});
@@ -259,7 +264,7 @@ def state():
     return {"solenoids": [s.state() for s in SOLENOIDS], "mask": current_mask(), "glyph": glyph(current_mask()),
             "pulse_ms": cfg["pulse_ms"], "max_on_ms": cfg["max_on_ms"], "cell_ms": cfg["cell_ms"],
             "space_ms": cfg["space_ms"], "gap_ms": cfg["gap_ms"], "active_high": cfg["active_high"],
-            "pins": cfg["pins"], "braille": braille_status(), "app": os.path.isfile(os.path.join(cfg["www_dir"], "index.html")),
+            "pins": cfg["pins"], "locked": LOCKED, "braille": braille_status(), "app": os.path.isfile(os.path.join(cfg["www_dir"], "index.html")),
             "log": LOG[-10:]}
 
 
@@ -329,6 +334,16 @@ class Handler(BaseHTTPRequestHandler):
             if parts[0] == "alloff":
                 stop_braille(); all_off(); log("ALL OFF")
                 return self._send(200, state())
+            if parts[0] == "lock":
+                global LOCKED
+                v = q.get("value", ["1"])[0]
+                LOCKED = v not in ("0", "false", "off")
+                if LOCKED:
+                    stop_braille(); all_off()
+                log("PINS LOCKED" if LOCKED else "pins unlocked")
+                return self._send(200, state())
+            if parts[0] in ("cell", "braille", "pulse", "on", "off") and LOCKED and not (parts[0] == "braille" and len(parts) > 1 and parts[1] == "stop"):
+                return self._send(423, dict(state(), error="pins are locked"))
             if parts[0] == "cell":
                 stop_braille()
                 mask = qint(q, "mask", 0, 0, 63)
