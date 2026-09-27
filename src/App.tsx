@@ -197,11 +197,17 @@ export default function App() {
   const cameraMode = bridge.state?.camera_mode ?? 'objects';
   const aslMode = cameraMode === 'asl';
   const { setCameraMode: bridgeSetCameraMode } = bridge;
+  const [cameraModeError, setCameraModeError] = useState<string | null>(null);
   const handleCameraMode = useCallback(
     async (mode: typeof cameraMode) => {
       setCameraModeBusy(true);
-      await bridgeSetCameraMode(mode);
+      setCameraModeError(null);
+      const ok = await bridgeSetCameraMode(mode);
       setCameraModeBusy(false);
+      // The switch can fail server-side (e.g. the ASL model didn't load) without
+      // throwing, in which case cameraMode silently stays where it was; surface
+      // that instead of leaving the click looking like it did nothing.
+      if (!ok) setCameraModeError(`Could not switch to ${mode}${mode === 'asl' ? ' (check the bridge terminal, or mediapipe/model download)' : ''}.`);
     },
     [bridgeSetCameraMode],
   );
@@ -240,6 +246,7 @@ export default function App() {
         cameraMode={cameraMode}
         onCameraMode={handleCameraMode}
         cameraModeBusy={cameraModeBusy}
+        bridgeOffline={!bridge.online}
       />
 
       {view === 'lab' ? (
@@ -269,7 +276,7 @@ export default function App() {
       <footer className="foot small muted">
         Uncontracted braille, one 3 × 2 cell at a time. Pin numbering follows the standard cell: 1–3 down the left column, 4–6 down the right.
         {hardware.live ? ` Live on the Pi at ${hardware.host}.` : ' Hardware offline: simulating.'}
-        {bridge.online ? ` ${recognizer === 'both' ? 'Camera + microphone' : soundMode ? 'Sound' : 'Camera'} bridge connected.` : ''}
+        {bridge.online ? ` ${recognizer === 'both' ? 'Camera + microphone' : soundMode ? 'Sound' : 'Camera'} bridge connected.` : ' Bridge not connected: start bridge/detect_bridge.py.'}
         {aslMode && bridge.state
           ? ` Bragi (${bridge.state.asl.classifier}): ${
               !bridge.state.asl.available
@@ -279,6 +286,7 @@ export default function App() {
                   : 'no hand in view'
             }${bridge.state.asl.last_spoken ? ` — last spoken "${bridge.state.asl.last_spoken}"` : ''}. Spoken locally, not sent to the pins.`
           : ''}
+        {!aslMode && (cameraModeError || bridge.state?.asl.error) ? ` ⚠ ${cameraModeError || bridge.state?.asl.error}` : ''}
       </footer>
     </div>
   );

@@ -32,6 +32,8 @@ interface Props {
   onCameraMode(mode: CameraMode): void;
   /** Set while a mode switch is in flight (loading the hand model can take a moment). */
   cameraModeBusy: boolean;
+  /** No bridge process is reachable at all, so a click here can't do anything. */
+  bridgeOffline: boolean;
 }
 
 const STATUS_TEXT: Record<Status, string> = {
@@ -42,7 +44,7 @@ const STATUS_TEXT: Record<Status, string> = {
   complete: 'Message complete',
 };
 
-export function TopBar({ status, index, total, live, host, view, onView, onStop, pinsLocked, onLockPins, recognizer, cameraPaused, onPauseCamera, micPaused, onPauseMic, nearbyVoice, cameraMode, onCameraMode, cameraModeBusy }: Props) {
+export function TopBar({ status, index, total, live, host, view, onView, onStop, pinsLocked, onLockPins, recognizer, cameraPaused, onPauseCamera, micPaused, onPauseMic, nearbyVoice, cameraMode, onCameraMode, cameraModeBusy, bridgeOffline }: Props) {
   const showCount = status === 'streaming' || status === 'paused';
   const hasMic = recognizer !== 'camera';
   const hasCamera = recognizer !== 'sound';
@@ -74,11 +76,15 @@ export function TopBar({ status, index, total, live, host, view, onView, onStop,
           <button type="button" className={`tab ${view === 'lab' ? 'is-active' : ''}`} onClick={() => onView('lab')}>{hasCamera ? 'Camera lab' : 'Sound lab'}</button>
         </nav>
         {hasCamera && (
-          <nav className="tabs" aria-label="Camera mode" title="Same camera: read the world (objects/text) or read the wearer's own ASL and speak it aloud">
+          <nav
+            className="tabs"
+            aria-label="Camera mode"
+            title={bridgeOffline ? 'Bridge not connected: start bridge/detect_bridge.py first' : "Same camera: read the world (objects/text) or read the wearer's own ASL and speak it aloud"}
+          >
             <button
               type="button"
               className={`tab ${cameraMode === 'objects' ? 'is-active' : ''}`}
-              disabled={cameraModeBusy}
+              disabled={cameraModeBusy || bridgeOffline}
               onClick={() => onCameraMode('objects')}
             >
               Rune
@@ -86,7 +92,7 @@ export function TopBar({ status, index, total, live, host, view, onView, onStop,
             <button
               type="button"
               className={`tab ${cameraMode === 'asl' ? 'is-active' : ''}`}
-              disabled={cameraModeBusy}
+              disabled={cameraModeBusy || bridgeOffline}
               onClick={() => onCameraMode('asl')}
             >
               {cameraModeBusy && cameraMode !== 'asl' ? 'Loading Bragi…' : 'Bragi'}
