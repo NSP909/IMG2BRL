@@ -1,10 +1,22 @@
 "$schema" = "https://conductor.build/schemas/settings.repo.schema.json"
 
 [scripts]
-setup = "npm install"
+setup = "npm install && (test -d bridge/.venv || python3 -m venv bridge/.venv) && bridge/.venv/bin/pip install -r bridge/requirements.txt"
+run_mode = "concurrent"
 
 [scripts.run.dev]
 available_in = [ "local" ]
-command = "npm run dev -- --port $CONDUCTOR_PORT"
+command = "BRIDGE_HOST=127.0.0.1:$((CONDUCTOR_PORT+1)) npm run dev -- --port $CONDUCTOR_PORT"
 default = true
 icon = "play"
+
+[scripts.run.bridge]
+available_in = [ "local" ]
+# Camera-only, no mic/OpenAI key needed for local dev. Bragi (ASL) works
+# regardless of whether this process's own camera access succeeds, since it
+# reads frames posted from the browser (POST /asl_frame) instead -- this is
+# only needed for Rune's object/text detection to see anything. If the
+# Python-side camera itself fails with "not authorized," grant Conductor
+# camera access in System Settings > Privacy & Security > Camera.
+command = "bridge/.venv/bin/python3 bridge/detect_bridge.py --camera 0 --recognizer camera --port $((CONDUCTOR_PORT+1))"
+icon = "server"
