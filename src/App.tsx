@@ -300,7 +300,7 @@ export default function App() {
               onFrame={handleFrame}
             />
           )}
-          {hasMic && <SoundPanel bridge={bridge} />}
+          {hasMic && !aslMode && <SoundPanel bridge={bridge} />}
           {!aslMode && (
             <>
               <DetectionCard detection={detection} cellCount={cells.length} />
