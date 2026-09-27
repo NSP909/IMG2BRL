@@ -118,9 +118,11 @@ open http://169.254.10.10:8080/          # bare button panel + braille text box
 ./tools/solenoid.sh text "Hello 42"      # braille playback on the Pi's clock
 ```
 
-When developing the web app on a laptop (`npm run dev`), the Pin actuator
-panel has an address field and a "Drive real pins" switch; the default
-address is the USB link.
+When developing the web app on a laptop (`npm run dev`), the dev server
+forwards `/pi/*` to the Pi (set `PI_HOST=host:port` to change it), so the
+browser only talks to localhost and needs no local-network permission. The
+Pin actuator panel shows the link status, has a "Drive real pins" switch,
+and an address field if you want to point it somewhere else.
 
 ### HTTP API (port 8080)
 
