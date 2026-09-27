@@ -11,6 +11,7 @@ import { Viewfinder, type LiveFeed } from './components/Viewfinder';
 import { bridgeSendAslFrame, bridgeSendCameraFrame, type AslStatus } from './lib/bridge';
 import { BragiPanel } from './components/BragiPanel';
 import { DetectionCard } from './components/DetectionCard';
+import { QueueCard } from './components/QueueCard';
 import { CellHero } from './components/CellHero';
 import { SequenceStrip } from './components/SequenceStrip';
 import { type Frame } from './components/PinPanel';
@@ -293,7 +294,6 @@ export default function App() {
         <SettingsView
           bridge={bridge}
           hasMic={hasMic}
-          nowPlaying={nowPlaying}
           onSend={sendText}
           sendDisabled={scanning}
           cell={stream.current}
@@ -316,7 +316,12 @@ export default function App() {
               onFrame={handleFrame}
             />
           )}
-          {!aslMode && <DetectionCard detection={detection} cellCount={cells.length} />}
+          {!aslMode && (
+            <>
+              <DetectionCard detection={detection} cellCount={cells.length} />
+              <QueueCard bridge={bridge} nowPlaying={nowPlaying} />
+            </>
+          )}
         </div>
 
         {aslMode ? (
