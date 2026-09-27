@@ -47,6 +47,8 @@ export type Engine = 'vlm' | 'tesseract' | 'none';
 export type Recognizer = 'camera' | 'sound' | 'both';
 /** Same camera either way: YOLO/EAST/Claude objects+text, or ASL fingerspelling spoken aloud. */
 export type CameraMode = 'objects' | 'asl';
+/** Which physical camera the bridge reads frames from. */
+export type CameraSource = 'pi' | 'webcam';
 
 /** Bragi: the wearer's own signing, read from the camera and spoken locally
  * (macOS `say`) for a bystander who doesn't know ASL. Opposite direction from
@@ -123,6 +125,10 @@ export interface BridgeState {
   scene: { diff: number; changed_at: number; changes: number; pruned: number };
   recognizer: Recognizer;
   camera_mode: CameraMode;
+  /** Which physical camera capture_loop() reads from: the Pi's own, or this laptop's webcam. */
+  camera_source: CameraSource;
+  /** True when --camera pinned the source at bridge startup (a testing-only override); the toggle is disabled. */
+  camera_source_fixed: boolean;
   asl: AslStatus;
   sound: SoundStatus;
   engine: Engine;
@@ -246,6 +252,12 @@ export function bridgeSetRotate(baseUrl: string, deg: 0 | 90 | 180 | 270): Promi
  * expect the promise to reject. */
 export function bridgeSetCameraMode(baseUrl: string, mode: CameraMode): Promise<BridgeState> {
   return post<BridgeState>(baseUrl, `/camera_mode?value=${mode}`);
+}
+
+/** Switch which physical camera capture_loop() reads from: the Pi's own, or
+ * this laptop's webcam. Rejects if --camera pinned the source at startup. */
+export function bridgeSetCameraSource(baseUrl: string, source: CameraSource): Promise<BridgeState> {
+  return post<BridgeState>(baseUrl, `/camera_source?value=${source}`);
 }
 
 /** Browser-captured frame (getUserMedia) for ASL mode, bypassing the bridge's

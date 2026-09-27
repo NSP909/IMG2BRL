@@ -11,7 +11,6 @@ import { SettingsCard, type Settings } from './SettingsCard';
 
 interface Props {
   bridge: Bridge;
-  hasMic: boolean;
   nowPlaying: string | null;
   /** Play a label on the finger right away, bypassing the queue (lab rows). */
   onSendNow(label: string, kind: DetectionKind): void;
@@ -42,9 +41,10 @@ function providerName(p: 'anthropic' | 'openai' | null | undefined) {
  * demo audience," so they live in one place now instead of two separate
  * tabs that only made sense to whoever built each half.
  */
-export function DevView({ bridge, hasMic, nowPlaying, onSendNow, onSendText, sendDisabled, cell, frames, hardware, settings, onSettingsChange }: Props) {
+export function DevView({ bridge, nowPlaying, onSendNow, onSendText, sendDisabled, cell, frames, hardware, settings, onSettingsChange }: Props) {
   const s = bridge.state;
   const soundOnly = s?.recognizer === 'sound';
+  const hasMic = (s?.recognizer ?? 'camera') !== 'camera';
   const live: LiveFeed | null =
     bridge.online && s ? { streamUrl: bridge.streamUrl, cameraOk: s.camera_ok, detections: s.detections, best: s.best, stats: s.stats, frameSize: s.frame_size } : null;
   const yolo = (s?.detections ?? []).filter((d) => !d.engine).sort((a, b) => b.confidence - a.confidence);
@@ -65,6 +65,26 @@ export function DevView({ bridge, hasMic, nowPlaying, onSendNow, onSendText, sen
                 <div className="tabs" role="radiogroup" aria-label="Rotation">
                   {([0, 90, 180, 270] as const).map((d) => (
                     <button key={d} type="button" className={`tab ${s.rotate === d ? 'is-active' : ''}`} onClick={() => bridge.setRotate(d)} disabled={!bridge.online}>{d}°</button>
+                  ))}
+                </div>
+              </div>
+            )}
+            {s && (
+              <div className="field__row">
+                <span className="small muted" title={s.camera_source_fixed ? '--camera pinned this at bridge startup' : 'Pi camera vs this laptop’s webcam, for testing without the Pi'}>
+                  Camera source{s.camera_source_fixed ? ' (fixed)' : ''}
+                </span>
+                <div className="tabs" role="radiogroup" aria-label="Camera source">
+                  {(['pi', 'webcam'] as const).map((src) => (
+                    <button
+                      key={src}
+                      type="button"
+                      className={`tab ${s.camera_source === src ? 'is-active' : ''}`}
+                      onClick={() => void bridge.setCameraSource(src)}
+                      disabled={!bridge.online || s.camera_source_fixed}
+                    >
+                      {src === 'pi' ? 'Pi' : 'Webcam'}
+                    </button>
                   ))}
                 </div>
               </div>

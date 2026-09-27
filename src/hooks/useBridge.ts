@@ -5,6 +5,7 @@ import {
   bridgeClear,
   bridgeNext,
   bridgeSetCameraMode,
+  bridgeSetCameraSource,
   bridgeSetEngine,
   bridgeSetMode,
   bridgeSetPausedTarget,
@@ -16,6 +17,7 @@ import {
   streamUrl,
   type BridgeState,
   type CameraMode,
+  type CameraSource,
   type Engine,
   type QueueItem,
 } from '../lib/bridge';
@@ -53,6 +55,10 @@ export interface Bridge {
    * spoken aloud (Bragi). Resolves false (state left unchanged) if the ASL
    * model failed to load. */
   setCameraMode(mode: CameraMode): Promise<boolean>;
+  /** Which physical camera to read from: the Pi's own, or this laptop's
+   * webcam (handy for testing away from the Pi). Resolves false if --camera
+   * pinned the source at bridge startup. */
+  setCameraSource(source: CameraSource): Promise<boolean>;
 }
 
 export function useBridge(): Bridge {
@@ -181,6 +187,19 @@ export function useBridge(): Bridge {
     [baseUrl, refresh],
   );
 
+  const setCameraSource = useCallback(
+    async (source: CameraSource) => {
+      try {
+        setState(await bridgeSetCameraSource(baseUrl, source));
+        return true;
+      } catch {
+        void refresh(); // pull the real state back (e.g. camera_source_fixed)
+        return false;
+      }
+    },
+    [baseUrl, refresh],
+  );
+
   return {
     baseUrl,
     online,
@@ -200,5 +219,6 @@ export function useBridge(): Bridge {
     setProximity,
     setRotate,
     setCameraMode,
+    setCameraSource,
   };
 }

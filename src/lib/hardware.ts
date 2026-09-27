@@ -15,7 +15,7 @@ export interface HardwareStatus {
   locked: boolean;
 }
 
-export const DEFAULT_BASE_URL = 'http://169.254.10.10:8080';
+export const DEFAULT_BASE_URL = 'http://172.20.10.9:8080';
 /** The Vite dev server forwards /pi/* to the Pi (see vite.config.ts). */
 export const DEV_PROXY_URL = '/pi';
 const KEY_URL = 'hardware.baseUrl';

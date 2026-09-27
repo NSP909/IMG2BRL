@@ -32,6 +32,7 @@ HTTP on :8765 (CORS open):
   POST /proximity?enabled=1|0[&threshold=0.55] opt-in: accept speech without the name while a person is close
   POST /rotate?deg=0|90|180|270                rotate camera frames clockwise (saved in bridge/camera.json)
   POST /camera_mode?value=objects|asl          same camera: YOLO/EAST/Claude, or ASL fingerspelling -> spoken aloud
+  POST /camera_source?value=pi|webcam          switch between the Pi's camera and this laptop's webcam (ignored if --camera fixed it)
 
 ASL mode (bridge/asl_mode.py) is the opposite direction from everything else
 here: it reads the *wearer's own* signing and speaks it aloud locally (macOS
@@ -56,8 +57,13 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
 ap.add_argument("--recognizer", choices=["camera", "sound", "both"], default="both",
                 help="camera vision, name-triggered microphone transcription, or both (default)")
-ap.add_argument("--pi", default="169.254.10.10", help="Pi address (solenoid server :8080, camera :8555)")
-ap.add_argument("--camera", default=None, help="camera source; default tcp://<pi>:8555, a webcam index like 0, or an image file")
+ap.add_argument("--pi", default="172.20.10.9", help="Pi address (solenoid server :8080, camera :8555)")
+ap.add_argument("--camera", default=None,
+                help="fix the camera source (a webcam index like 0, an image file, or a tcp:// url) and disable the "
+                     "pi/webcam toggle below -- for tests only; leave unset for the normal live-togglable behaviour")
+ap.add_argument("--camera-source", choices=["pi", "webcam"], default="pi",
+                help="which camera POST /camera_source starts on and can toggle live between: the Pi's own camera, "
+                     "or this laptop's webcam (index 0). No effect if --camera is set.")
 ap.add_argument("--port", type=int, default=8765)
 ap.add_argument("--weights", default=os.path.join(HERE, "..", "pi", "models", "yolo26n-seg.pt"))
 ap.add_argument("--device", default="mps")
@@ -143,8 +149,19 @@ if args.recognizer != "sound":
         import cv2
     except ImportError as exc:
         ap.error(f"camera mode requires OpenCV ({exc}); run: python3 -m pip install -r bridge/requirements.txt")
-CAMERA = args.camera if args.camera is not None else f"tcp://{args.pi}:8555"
+CAMERA_FIXED = args.camera is not None
 PI_URL = f"http://{args.pi}:8080"
+CAMERA_SWITCH = threading.Event()   # set to force capture_loop() to drop its current source and re-read camera_source
+
+
+def current_camera_source():
+    """Pi's own camera (tcp) or this laptop's webcam (index 0) -- live-togglable
+    via POST /camera_source, unless --camera pinned it to something fixed."""
+    if CAMERA_FIXED:
+        return args.camera
+    with LOCK:
+        mode = STATE["camera_source"]
+    return 0 if mode == "webcam" else f"tcp://{args.pi}:8555"
 
 # COCO name -> what the finger should feel
 RELABEL = {"cell phone": "phone", "dining table": "table", "tv": "screen", "potted plant": "plant", "handbag": "bag"}
@@ -181,10 +198,20 @@ SOUND_SERVICE = None
 ASL = asl_mode.AslRecognizer(classifier=args.asl_classifier, stable_passes=args.asl_stable)
 STATE = {
     "frame": None, "jpeg": None, "frame_at": 0.0, "camera_ok": False, "browser_frame_at": 0.0,
+    # Same frame as "frame", but before STATE["rotate"] is applied. Rune wants
+    # the rotated frame (so it displays and reads upright); Bragi's KNN
+    # classifier was trained on samples recorded via a browser webcam that was
+    # never rotated, so it needs this one instead -- see asl_pass() call in
+    # detect_loop().
+    "frame_raw": None,
     "detections": [], "best": None, "mode": args.mode, "queue": collections.deque(),   # kept sorted: speech, then text, then objects
     # Same camera as objects/text; interpreted as ASL fingerspelling and spoken
     # locally instead of queued as braille. See the module docstring above.
     "camera_mode": "objects",
+    # Which physical camera capture_loop() reads from: the Pi's own (tcp) or
+    # this laptop's webcam. Live-togglable via POST /camera_source (see
+    # current_camera_source()), unless --camera pinned it for a test.
+    "camera_source": args.camera_source,
     "asl": {"available": False, "classifier": args.asl_classifier, "label": None,
             "stable_count": 0, "stable_needed": args.asl_stable, "last_spoken": None, "error": None},
     "rotate": load_rotate(), "frame_size": None,
@@ -226,16 +253,19 @@ def log(msg):
 # ------------------------------------------------------------------ capture
 def capture_loop():
     while True:
-        src = int(CAMERA) if CAMERA.isdigit() else CAMERA
+        CAMERA_SWITCH.clear()
+        raw = current_camera_source()
+        src = int(raw) if isinstance(raw, str) and raw.isdigit() else raw
         is_image = isinstance(src, str) and src.lower().endswith((".jpg", ".jpeg", ".png"))
         if is_image:   # a still image as a fake camera, handy for tests
             frame = cv2.imread(src)
+            raw_frame = frame
             with LOCK:
                 rot = STATE["rotate"]
             if frame is not None and rot in ROTATE_CODES:
                 frame = cv2.rotate(frame, ROTATE_CODES[rot])
             with LOCK:
-                STATE["frame"], STATE["frame_at"], STATE["camera_ok"] = frame, time.time(), frame is not None
+                STATE["frame"], STATE["frame_raw"], STATE["frame_at"], STATE["camera_ok"] = frame, raw_frame, time.time(), frame is not None
                 if frame is not None:
                     STATE["frame_size"] = [frame.shape[1], frame.shape[0]]
             time.sleep(0.5)
@@ -251,19 +281,21 @@ def capture_loop():
                     STATE["camera_ok"] = False
             time.sleep(1.0)
             continue
-        log(f"camera connected: {CAMERA}")
+        log(f"camera connected: {src}")
         n, t0 = 0, time.time()
-        while True:
+        while not CAMERA_SWITCH.is_set():
             ok, frame = cap.read()
             if not ok:
                 break
             n += 1
+            raw_frame = frame
             with LOCK:
                 rot = STATE["rotate"]
             if rot in ROTATE_CODES:
                 frame = cv2.rotate(frame, ROTATE_CODES[rot])
             with LOCK:
                 STATE["frame"] = frame
+                STATE["frame_raw"] = raw_frame
                 STATE["frame_at"] = time.time()
                 STATE["frame_size"] = [frame.shape[1], frame.shape[0]]
                 STATE["camera_ok"] = True
@@ -274,7 +306,7 @@ def capture_loop():
         with LOCK:
             if time.time() - STATE["browser_frame_at"] > 2.0:
                 STATE["camera_ok"] = False
-        log("camera stream ended, reconnecting")
+        log("camera source switched" if CAMERA_SWITCH.is_set() else "camera stream ended, reconnecting")
         time.sleep(1.0)
 
 
@@ -748,7 +780,19 @@ def detect_loop():
         with LOCK:
             camera_mode = STATE["camera_mode"]
         if camera_mode == "asl":
-            asl_pass(small)
+            # Not `small`/`frame`: those went through STATE["rotate"], which
+            # Rune needs to read upright but which rotates hand landmarks
+            # away from the orientation the KNN samples were recorded in
+            # (a browser webcam feed, never rotated) -- see STATE["frame_raw"].
+            with LOCK:
+                asl_frame = STATE["frame_raw"]
+            if asl_frame is None:
+                asl_frame = frame
+            asl_small = (
+                cv2.resize(asl_frame, (960, int(asl_frame.shape[0] * 960 / asl_frame.shape[1])))
+                if asl_frame.shape[1] > 960 else asl_frame
+            )
+            asl_pass(asl_small)
             with LOCK:
                 STATE["detections"], STATE["best"] = [], None
                 STATE["text"].update(present=False, cells=0, box=None)
@@ -863,6 +907,7 @@ def snapshot():
         return {
             "recognizer": STATE["recognizer"], "sound": dict(STATE["sound"]),
             "camera_mode": STATE["camera_mode"], "asl": dict(STATE["asl"]),
+            "camera_source": STATE["camera_source"], "camera_source_fixed": CAMERA_FIXED,
             "rotate": STATE["rotate"], "frame_size": STATE["frame_size"],
             "visible": list(STATE["visible"]), "scene": dict(STATE["scene"]),
             "proximity": {k: v for k, v in STATE["proximity"].items() if k != "grace_until"},
@@ -1045,6 +1090,17 @@ class Handler(BaseHTTPRequestHandler):
                     STATE["asl"].update(label=None, stable_count=0, last_spoken=None)
             log(f"camera mode -> {v}")
             return self._json(200, snapshot())
+        if u.path == "/camera_source":
+            v = q.get("value", [""])[0]
+            if v not in ("pi", "webcam"):
+                return self._json(400, {"error": "value must be pi or webcam"})
+            if CAMERA_FIXED:
+                return self._json(409, {"error": "camera source is fixed by --camera at startup", **snapshot()})
+            with LOCK:
+                STATE["camera_source"] = v
+            CAMERA_SWITCH.set()
+            log(f"camera source -> {v}")
+            return self._json(200, snapshot())
         if u.path == "/asl_frame":
             # Browser-captured frame (getUserMedia), for testing/demoing ASL mode
             # without granting the bridge process its own OS camera permission --
@@ -1081,6 +1137,7 @@ class Handler(BaseHTTPRequestHandler):
             now = time.time()
             with LOCK:
                 STATE["frame"] = frame
+                STATE["frame_raw"] = frame  # never rotated server-side to begin with
                 STATE["frame_at"] = now
                 STATE["frame_size"] = [frame.shape[1], frame.shape[0]]
                 STATE["camera_ok"] = True
@@ -1120,7 +1177,8 @@ if __name__ == "__main__":
         threading.Thread(target=reader_loop, daemon=True).start()
     if args.direct:
         threading.Thread(target=direct_loop, daemon=True).start()
-    source = " ".join(filter(None, [f"camera={CAMERA}" if args.recognizer != "sound" else "", f"microphone={args.mic or 'default'}" if args.recognizer != "camera" else ""]))
+    camera_desc = args.camera if CAMERA_FIXED else f"{args.camera_source} (togglable)"
+    source = " ".join(filter(None, [f"camera={camera_desc}" if args.recognizer != "sound" else "", f"microphone={args.mic or 'default'}" if args.recognizer != "camera" else ""]))
     log(f"bridge on http://0.0.0.0:{args.port}  recognizer={args.recognizer}  {source}  pi={PI_URL}")
     try:
         ThreadingHTTPServer(("0.0.0.0", args.port), Handler).serve_forever()

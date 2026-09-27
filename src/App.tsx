@@ -10,9 +10,11 @@ import { Viewfinder, type LiveFeed } from './components/Viewfinder';
 import { bridgeSendAslFrame, bridgeSendCameraFrame, type AslStatus } from './lib/bridge';
 import { BragiPanel } from './components/BragiPanel';
 import { DetectionCard } from './components/DetectionCard';
+import { TextReadCard } from './components/TextReadCard';
 import { QueueCard } from './components/QueueCard';
 import { CellHero } from './components/CellHero';
 import { SequenceStrip } from './components/SequenceStrip';
+import { MicStatusCard } from './components/MicStatusCard';
 import { type Frame } from './components/PinPanel';
 import { type Settings } from './components/SettingsCard';
 
@@ -178,13 +180,20 @@ export default function App() {
 
   // Stop everything: playback, pins, queue, and any scan in progress.
   const { clear: bridgeClear } = bridge;
+  const { setPaused, setMicPaused } = bridge;
   const stop = useCallback(() => {
     if (scanTimer.current) window.clearTimeout(scanTimer.current);
     setScanning(false);
     stream.stop();
     allOff();
     bridgeClear();
-  }, [stream, allOff, bridgeClear]);
+    // Pause both recognizers too -- otherwise the camera or microphone just
+    // auto-queues something new a moment later and playback quietly resumes,
+    // which looks like Stop did nothing. Pause camera/mic in the top bar
+    // resume them explicitly.
+    setPaused(true);
+    setMicPaused(true);
+  }, [stream, allOff, bridgeClear, setPaused, setMicPaused]);
 
   // Play a label on the finger right away (used by the lab screen).
   const sendNow = useCallback((label: string, kind: DetectionKind) => {
@@ -222,12 +231,14 @@ export default function App() {
     [bridgeSetCameraMode],
   );
   const { baseUrl } = bridge;
-  // Browser camera drives detection whenever the bridge's own OS camera
-  // access isn't the one supplying frames -- true for ASL always (see
-  // BragiPanel/asl_mode.py), and true for Rune whenever the bridge is up but
-  // its camera isn't delivering (same root cause: a plain command-line
-  // Python process often can't get an OS camera-permission prompt at all).
-  const browserFeedActive = aslMode || (bridge.online && !(bridge.state?.camera_ok ?? false));
+  // Browser camera drives detection whenever the bridge's own camera (the Pi
+  // stream, or a webcam it opened itself) isn't the one supplying frames --
+  // same fallback for Rune and Bragi alike, since detect_loop() feeds
+  // STATE["frame"] to asl_pass() exactly like it does the object detector
+  // (see bridge/detect_bridge.py). Only actually needed when that camera is
+  // down (e.g. a plain command-line Python process without an OS
+  // camera-permission prompt).
+  const browserFeedActive = bridge.online && !(bridge.state?.camera_ok ?? false);
   const handleFrame = useCallback(
     (blob: Blob) => {
       if (aslMode) void bridgeSendAslFrame(baseUrl, blob);
@@ -291,7 +302,6 @@ export default function App() {
       {view === 'dev' ? (
         <DevView
           bridge={bridge}
-          hasMic={hasMic}
           nowPlaying={detection && stream.index >= 0 && !stream.finished ? detection.label : null}
           onSendNow={sendNow}
           onSendText={sendText}
@@ -316,12 +326,12 @@ export default function App() {
               onFrame={handleFrame}
             />
           )}
-          {!aslMode && (
-            <>
-              <DetectionCard detection={detection} cellCount={cells.length} />
-              <QueueCard bridge={bridge} nowPlaying={nowPlaying} />
-            </>
-          )}
+          {!aslMode && <DetectionCard detection={detection} cellCount={cells.length} />}
+          {/* Sound-only has no camera column to balance against, so its mic
+              status stays here; with a camera, the feed (tall -- the Pi's is
+              portrait) already fills this column, so text/mic move to the
+              right instead of stacking below it out of view. */}
+          {!aslMode && hasMic && soundMode && <MicStatusCard bridge={bridge} />}
         </div>
 
         {aslMode ? (
@@ -332,6 +342,9 @@ export default function App() {
           <div className="col" aria-label="Output">
             <CellHero stream={stream} />
             <SequenceStrip text={detection?.label ?? ''} cells={cells} index={stream.index} onSelect={stream.seek} />
+            <QueueCard bridge={bridge} nowPlaying={nowPlaying} />
+            {!soundMode && <TextReadCard bridge={bridge} onSend={sendNow} />}
+            {!soundMode && hasMic && <MicStatusCard bridge={bridge} />}
           </div>
         )}
       </main>

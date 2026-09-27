@@ -7,7 +7,7 @@ import react from '@vitejs/plugin-react';
  * only ever sees localhost, so no local-network permission or CORS is
  * involved. Override the Pi address with PI_HOST=host:port.
  */
-const PI = process.env.PI_HOST ?? '169.254.10.10:8080';
+const PI = process.env.PI_HOST ?? '172.20.10.9:8080';
 /** The detection bridge (bridge/detect_bridge.py) runs on this laptop. */
 const BRIDGE = process.env.BRIDGE_HOST ?? '127.0.0.1:8765';
 
