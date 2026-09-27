@@ -80,6 +80,7 @@ export function LabView({ bridge, onSend, nowPlaying }: Props) {
       </div>
 
       <div className="col" aria-label="Models">
+        {s?.recognizer === 'both' && <SoundPanel bridge={bridge} />}
         <section className="card" aria-label="Object model">
           <div className="card__head">
             <span className="eyebrow">Objects · YOLO</span>

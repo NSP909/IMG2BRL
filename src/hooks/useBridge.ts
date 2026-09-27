@@ -6,7 +6,8 @@ import {
   bridgeNext,
   bridgeSetEngine,
   bridgeSetMode,
-  bridgeSetPaused,
+  bridgeSetPausedTarget,
+  bridgeSetWake,
   fetchBridgeState,
   loadBridgeUrl,
   streamUrl,
@@ -32,9 +33,14 @@ export interface Bridge {
   setEngine(engine: Engine): void;
   /** Run one vision-model pass now. */
   analyze(): void;
-  /** Pause the active camera or microphone input. */
+  /** Camera lock (detection, reads and queueing stop). */
   paused: boolean;
   setPaused(paused: boolean): void;
+  /** Microphone lock. */
+  micPaused: boolean;
+  setMicPaused(paused: boolean): void;
+  /** Change the wearer name the microphone listens for. */
+  setWake(name: string, aliases: string[]): Promise<boolean>;
 }
 
 export function useBridge(): Bridge {
@@ -110,7 +116,27 @@ export function useBridge(): Bridge {
   const setPaused = useCallback(
     (paused: boolean) => {
       setState((s) => (s ? { ...s, paused } : s));
-      bridgeSetPaused(baseUrl, paused).then(setState).catch(() => {});
+      bridgeSetPausedTarget(baseUrl, paused, 'camera').then(setState).catch(() => {});
+    },
+    [baseUrl],
+  );
+
+  const setMicPaused = useCallback(
+    (paused: boolean) => {
+      setState((s) => (s ? { ...s, sound: { ...s.sound, paused } } : s));
+      bridgeSetPausedTarget(baseUrl, paused, 'mic').then(setState).catch(() => {});
+    },
+    [baseUrl],
+  );
+
+  const setWake = useCallback(
+    async (name: string, aliases: string[]) => {
+      try {
+        setState(await bridgeSetWake(baseUrl, name, aliases));
+        return true;
+      } catch {
+        return false;
+      }
     },
     [baseUrl],
   );
@@ -128,5 +154,8 @@ export function useBridge(): Bridge {
     analyze,
     paused: state?.paused ?? false,
     setPaused,
+    micPaused: state?.sound.paused ?? false,
+    setMicPaused,
+    setWake,
   };
 }

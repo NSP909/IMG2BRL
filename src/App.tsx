@@ -108,6 +108,13 @@ export default function App() {
     };
   }, [view, bridge.online, queueLen, idle, bridgeNext, hardware.locked]);
 
+  // Precedence: speech that names the wearer interrupts whatever the camera put on the finger.
+  const headIsSpeech = bridge.state?.queue[0]?.kind === 'speech';
+  useEffect(() => {
+    if (view !== 'main' || !headIsSpeech || hardware.locked) return;
+    if (stream.playing && detection && detection.source !== 'microphone') stream.stop();
+  }, [view, headIsSpeech, hardware.locked, stream, detection]);
+
   // Every change of the displayed cell is one frame to the controller.
   const [frames, setFrames] = useState<Frame[]>([]);
   const frameSeq = useRef(0);
@@ -174,7 +181,9 @@ export default function App() {
           ? 'paused'
           : 'idle';
 
-  const soundMode = bridge.state?.recognizer === 'sound';
+  const recognizer = bridge.state?.recognizer ?? 'camera';
+  const soundMode = recognizer === 'sound';
+  const hasMic = recognizer !== 'camera';
   const liveFeed: LiveFeed | null =
     bridge.online && bridge.state && !soundMode
       ? {
@@ -200,9 +209,11 @@ export default function App() {
         onStop={stop}
         pinsLocked={hardware.locked}
         onLockPins={lockPins}
-        recognizer={bridge.state?.recognizer ?? 'camera'}
-        inputPaused={bridge.paused}
-        onPauseInput={bridge.setPaused}
+        recognizer={recognizer}
+        cameraPaused={bridge.paused}
+        onPauseCamera={bridge.setPaused}
+        micPaused={bridge.micPaused}
+        onPauseMic={bridge.setMicPaused}
       />
 
       {view === 'lab' ? (
@@ -210,11 +221,8 @@ export default function App() {
       ) : (
       <main className="layout">
         <div className="col" aria-label="Input">
-          {soundMode ? (
-            <SoundPanel bridge={bridge} />
-          ) : (
-            <Viewfinder detection={scanning ? null : detection} scanning={scanning} onCapture={capture} live={liveFeed} />
-          )}
+          {!soundMode && <Viewfinder detection={scanning ? null : detection} scanning={scanning} onCapture={capture} live={liveFeed} />}
+          {hasMic && <SoundPanel bridge={bridge} />}
           <DetectionCard detection={detection} cellCount={cells.length} />
           <QueueCard bridge={bridge} nowPlaying={nowPlaying} />
           <ComposeCard onSend={sendText} disabled={scanning} />
@@ -235,7 +243,7 @@ export default function App() {
       <footer className="foot small muted">
         Uncontracted braille, one 3 × 2 cell at a time. Pin numbering follows the standard cell: 1–3 down the left column, 4–6 down the right.
         {hardware.live ? ` Live on the Pi at ${hardware.host}.` : ' Hardware offline: simulating.'}
-        {bridge.online ? ` ${soundMode ? 'Sound' : 'Camera'} bridge connected.` : ''}
+        {bridge.online ? ` ${recognizer === 'both' ? 'Camera + microphone' : soundMode ? 'Sound' : 'Camera'} bridge connected.` : ''}
       </footer>
     </div>
   );

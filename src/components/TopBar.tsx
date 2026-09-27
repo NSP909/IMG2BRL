@@ -19,9 +19,12 @@ interface Props {
   pinsLocked: boolean;
   onLockPins(locked: boolean): void;
   recognizer: Recognizer;
-  /** Active-input lock: the bridge stops camera detection or microphone listening. */
-  inputPaused: boolean;
-  onPauseInput(paused: boolean): void;
+  /** Camera lock: the bridge stops detection, reads and queueing. */
+  cameraPaused: boolean;
+  onPauseCamera(paused: boolean): void;
+  /** Microphone lock: listening stops and buffered speech is discarded. */
+  micPaused: boolean;
+  onPauseMic(paused: boolean): void;
 }
 
 const STATUS_TEXT: Record<Status, string> = {
@@ -32,9 +35,10 @@ const STATUS_TEXT: Record<Status, string> = {
   complete: 'Message complete',
 };
 
-export function TopBar({ status, index, total, live, host, view, onView, onStop, pinsLocked, onLockPins, recognizer, inputPaused, onPauseInput }: Props) {
+export function TopBar({ status, index, total, live, host, view, onView, onStop, pinsLocked, onLockPins, recognizer, cameraPaused, onPauseCamera, micPaused, onPauseMic }: Props) {
   const showCount = status === 'streaming' || status === 'paused';
-  const sound = recognizer === 'sound';
+  const hasMic = recognizer !== 'camera';
+  const hasCamera = recognizer !== 'sound';
   return (
     <header className="topbar">
       <div className="brand">
@@ -60,7 +64,7 @@ export function TopBar({ status, index, total, live, host, view, onView, onStop,
       <div className="topbar__right">
         <nav className="tabs" aria-label="Screens">
           <button type="button" className={`tab ${view === 'main' ? 'is-active' : ''}`} onClick={() => onView('main')}>Finger</button>
-          <button type="button" className={`tab ${view === 'lab' ? 'is-active' : ''}`} onClick={() => onView('lab')}>{sound ? 'Sound lab' : 'Camera lab'}</button>
+          <button type="button" className={`tab ${view === 'lab' ? 'is-active' : ''}`} onClick={() => onView('lab')}>{hasCamera ? 'Camera lab' : 'Sound lab'}</button>
         </nav>
         <span className="pill" title={pinsLocked ? 'Pins are locked on the Pi' : live ? `Solenoid cell on the Pi at ${host}` : 'The Pi is not driving pins right now'}>
           <span className={`pill__dot ${pinsLocked ? 'pill__dot--locked' : live ? 'pill__dot--live' : 'pill__dot--sim'}`} />
@@ -77,18 +81,30 @@ export function TopBar({ status, index, total, live, host, view, onView, onStop,
             <LockIcon />
             {pinsLocked ? 'Pins locked' : 'Lock pins'}
           </button>
-          <button
-            type="button"
-            className={`btn btn--latch btn--latch-amber ${inputPaused ? 'is-on' : ''}`}
-            onClick={() => onPauseInput(!inputPaused)}
-            aria-pressed={inputPaused}
-            title={sound
-              ? inputPaused ? 'Microphone listening is paused. Click to resume.' : 'Pause listening and discard buffered speech.'
-              : inputPaused ? 'Camera is paused: no detection or queueing. Click to resume.' : 'Pause the camera: stop detecting, calling the vision model and queueing.'}
-          >
-            {sound ? <MicIcon /> : <CameraIcon />}
-            {sound ? (inputPaused ? 'Mic paused' : 'Pause mic') : (inputPaused ? 'Camera paused' : 'Pause camera')}
-          </button>
+          {hasMic && (
+            <button
+              type="button"
+              className={`btn btn--latch btn--latch-amber ${micPaused ? 'is-on' : ''}`}
+              onClick={() => onPauseMic(!micPaused)}
+              aria-pressed={micPaused}
+              title={micPaused ? 'Microphone listening is paused. Click to resume.' : 'Pause listening and discard buffered speech.'}
+            >
+              <MicIcon />
+              {micPaused ? 'Mic paused' : 'Pause mic'}
+            </button>
+          )}
+          {hasCamera && (
+            <button
+              type="button"
+              className={`btn btn--latch btn--latch-amber ${cameraPaused ? 'is-on' : ''}`}
+              onClick={() => onPauseCamera(!cameraPaused)}
+              aria-pressed={cameraPaused}
+              title={cameraPaused ? 'Camera is paused: no detection or queueing. Click to resume.' : 'Pause the camera: stop detecting, calling the vision model and queueing.'}
+            >
+              <CameraIcon />
+              {cameraPaused ? 'Camera paused' : 'Pause camera'}
+            </button>
+          )}
           <button type="button" className="btn btn--stop" onClick={onStop} title="Stop playback now, drop all pins, clear the queue">
             <StopIcon />
             Stop

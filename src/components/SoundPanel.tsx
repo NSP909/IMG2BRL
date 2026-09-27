@@ -1,3 +1,4 @@
+import { useEffect, useState, type FormEvent } from 'react';
 import type { Bridge } from '../hooks/useBridge';
 import { MicIcon } from './Icons';
 
@@ -16,10 +17,33 @@ function stateLabel(state: string) {
 /** Read-only microphone status. Rejected transcripts are intentionally absent. */
 export function SoundPanel({ bridge }: Props) {
   const sound = bridge.state?.sound;
-  const paused = bridge.paused;
+  const paused = bridge.micPaused;
   const names = sound
     ? [sound.wake_name, ...sound.aliases].filter(Boolean).join(' · ')
     : '—';
+
+  // Editable wearer name + aliases; saved on the bridge (bridge/wake.json) so it survives restarts.
+  const [name, setName] = useState(sound?.wake_name ?? '');
+  const [aliases, setAliases] = useState(sound?.aliases.join(', ') ?? '');
+  const [saving, setSaving] = useState<'idle' | 'saving' | 'saved' | 'failed'>('idle');
+  const aliasKey = sound?.aliases.join(',') ?? '';
+  useEffect(() => {
+    if (sound && saving === 'idle') {
+      setName(sound.wake_name ?? '');
+      setAliases(sound.aliases.join(', '));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sound?.wake_name, aliasKey]);
+  const dirty = !!sound && (name.trim() !== (sound.wake_name ?? '') || aliases.split(',').map((a) => a.trim()).filter(Boolean).join(',') !== aliasKey);
+
+  async function save(e: FormEvent) {
+    e.preventDefault();
+    if (!name.trim()) return;
+    setSaving('saving');
+    const ok = await bridge.setWake(name.trim(), aliases.split(',').map((a) => a.trim()).filter(Boolean));
+    setSaving(ok ? 'saved' : 'failed');
+    window.setTimeout(() => setSaving('idle'), 1500);
+  }
 
   return (
     <section className="card sound" aria-label="Name-triggered speech recognition">
@@ -35,9 +59,17 @@ export function SoundPanel({ bridge }: Props) {
         <span className="sound__icon"><MicIcon /></span>
         <div>
           <div className="sound__title">Listening for: {names}</div>
-          <div className="small muted">{sound?.device ?? 'Start the bridge in sound mode to select the Mac microphone.'}</div>
+          <div className="small muted">{sound?.device ?? 'Start the bridge to select the Mac microphone.'}</div>
         </div>
       </div>
+
+      <form className="sound__name" onSubmit={save} aria-label="Wearer name">
+        <input className="input" type="text" value={name} onChange={(e) => setName(e.target.value)} placeholder="Wearer's name" aria-label="Wearer's name" spellCheck={false} disabled={!bridge.online} />
+        <input className="input" type="text" value={aliases} onChange={(e) => setAliases(e.target.value)} placeholder="Other spellings, comma-separated" aria-label="Alternate spellings" spellCheck={false} disabled={!bridge.online} />
+        <button type="submit" className="btn btn--primary" disabled={!bridge.online || !name.trim() || (!dirty && saving === 'idle')}>
+          {saving === 'saving' ? 'Saving…' : saving === 'saved' ? 'Saved' : saving === 'failed' ? 'Failed' : 'Set name'}
+        </button>
+      </form>
 
       <div className="sound__meter" aria-label={`Microphone level ${sound?.level_dbfs ?? -120} decibels full scale`}>
         <span style={{ width: `${levelPercent(sound?.level_dbfs ?? -120)}%` }} />
@@ -57,7 +89,7 @@ export function SoundPanel({ bridge }: Props) {
         </div>
       )}
       {sound?.last_text && <p className="sound__last"><span className="chip chip--speech">speech</span>{sound.last_text}</p>}
-      <p className="small muted">Only complete utterances containing the configured name or alias enter the queue. Other speech is discarded without being shown or logged.</p>
+      <p className="small muted">Only complete utterances containing the name or an alias enter the queue, ahead of anything the camera saw. Other speech is discarded without being shown or logged.</p>
     </section>
   );
 }

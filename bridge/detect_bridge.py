@@ -1,5 +1,8 @@
 #!/usr/bin/env python3
-"""Recognition bridge: camera or Mac microphone -> queue -> braille finger.
+"""Recognition bridge: Pi camera + Mac microphone -> one queue -> braille finger.
+
+Precedence on the finger: speech that contains the wearer's name, then text
+seen by the camera, then objects. The queue is kept in that order.
 
   camera (Pi, MJPEG tcp 8555) ---> latest frame
   latest frame --every 0.5 s--> YOLO26 (objects, filtered to a short list of venue objects)
@@ -21,7 +24,8 @@ HTTP on :8765 (CORS open):
   POST /mode?value=auto|manual
   POST /engine?value=vlm|tesseract|none   who reads text: Claude (default), Tesseract (offline), nobody
   POST /analyze                read the text now, ignoring the 5 s gap
-  POST /pause?value=1|0        pause the active camera or microphone input
+  POST /pause?value=1|0&target=all|camera|mic   pause the camera, the microphone, or both
+  POST /wake?name=Priya&aliases=Pri,Priyan     change the wearer name the microphone listens for
 
 Sound mode (separate from the camera pipeline):
   python3 bridge/detect_bridge.py --recognizer sound --wake-name Ritesh \
@@ -36,8 +40,8 @@ import numpy as np
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-ap.add_argument("--recognizer", choices=["camera", "sound"], default="camera",
-                help="camera vision pipeline (default) or name-triggered microphone transcription")
+ap.add_argument("--recognizer", choices=["camera", "sound", "both"], default="both",
+                help="camera vision, name-triggered microphone transcription, or both (default)")
 ap.add_argument("--pi", default="169.254.10.10", help="Pi address (solenoid server :8080, camera :8555)")
 ap.add_argument("--camera", default=None, help="camera source; default tcp://<pi>:8555, a webcam index like 0, or an image file")
 ap.add_argument("--port", type=int, default=8765)
@@ -63,17 +67,38 @@ ap.add_argument("--max-queue", type=int, default=8)
 ap.add_argument("--direct", action="store_true", help="play the queue on the Pi from here (no web app needed)")
 ap.add_argument("--cell-ms", type=int, default=900)
 ap.add_argument("--space-ms", type=int, default=500)
-ap.add_argument("--wake-name", default=None, help="sound mode: wearer name that must appear in an utterance")
+ap.add_argument("--wake-name", default=None, help="wearer name that must appear in an utterance (default: bridge/wake.json or 'Priya')")
 ap.add_argument("--wake-alias", action="append", default=[], help="sound mode: exact alternate spelling; repeatable")
-ap.add_argument("--mic", default="MacBook Air Microphone", help="sound mode: exact microphone name or input index")
+ap.add_argument("--mic", default=None, help="sound mode: exact microphone name or input index (default: the system input)")
 ap.add_argument("--transcription-model", default="gpt-transcribe",
                 help="sound mode: OpenAI transcription model")
 ap.add_argument("--transcription-timeout", type=float, default=15.0,
                 help="sound mode: maximum seconds for each cloud transcription request")
 args = ap.parse_args()
-if args.recognizer == "sound" and not (args.wake_name or "").strip():
-    ap.error("--wake-name is required when --recognizer sound is selected")
-if args.recognizer == "camera":
+WAKE_FILE = os.path.join(HERE, "wake.json")
+
+
+def load_wake():
+    """Wearer name: CLI flag, else bridge/wake.json (written by the website), else a default."""
+    name, aliases = (args.wake_name or "").strip(), list(args.wake_alias)
+    if not name:
+        try:
+            saved = json.load(open(WAKE_FILE))
+            name, aliases = str(saved.get("name", "")).strip(), [str(a) for a in saved.get("aliases", [])]
+        except (OSError, ValueError):
+            pass
+    return (name or "Priya"), aliases
+
+
+def save_wake(name, aliases):
+    try:
+        json.dump({"name": name, "aliases": list(aliases)}, open(WAKE_FILE, "w"), indent=2)
+    except OSError:
+        pass
+
+
+args.wake_name, args.wake_alias = load_wake()
+if args.recognizer != "sound":
     try:
         import cv2
     except ImportError as exc:
@@ -115,7 +140,7 @@ LOCK = threading.Lock()
 SOUND_SERVICE = None
 STATE = {
     "frame": None, "jpeg": None, "frame_at": 0.0, "camera_ok": False,
-    "detections": [], "best": None, "mode": args.mode, "queue": collections.deque(),
+    "detections": [], "best": None, "mode": args.mode, "queue": collections.deque(),   # kept sorted: speech, then text, then objects
     "playing": None, "seq": 0, "paused": False, "engine": args.engine,
     "text": {"present": False, "cells": 0, "score": 0.0, "box": None, "since": 0.0},
     "read": {"available": bool(VLM_KEY) or True, "provider": VLM_PROVIDER, "model": None, "text": "", "confidence": 0.0,
@@ -124,7 +149,7 @@ STATE = {
     "recognizer": args.recognizer,
     "sound": {
         "available": False, "device": None, "sample_rate": None, "listening": False, "paused": False,
-        "state": "off" if args.recognizer == "camera" else "starting", "level_dbfs": -120.0,
+        "state": "off" if args.recognizer == "camera" else "starting", "level_dbfs": -120.0, "mic": args.mic,
         "vad_probability": 0.0, "wake_name": args.wake_name, "aliases": list(args.wake_alias),
         "model": args.transcription_model, "latency_ms": 0, "accepted_count": 0, "discarded_count": 0,
         "dropped_count": 0, "last_text": "", "error": None,
@@ -513,15 +538,33 @@ def choose_best(dets):
     return None
 
 
+PRIORITY = {"speech": 0, "text": 1, "object": 2}   # what the finger gets first
+
+
 def enqueue(det, reason, source="camera"):
     with LOCK:
-        if len(STATE["queue"]) >= args.max_queue:
-            STATE["queue"].popleft()
         STATE["seq"] += 1
         prefix = "mic" if source == "microphone" else "cam"
-        item = dict(det, id=f"{prefix}-{STATE['seq']}", at=int(time.time() * 1000), source=source)
+        item = dict(det, id=f"{prefix}-{STATE['seq']}", at=int(time.time() * 1000), source=source,
+                    priority=PRIORITY.get(det["kind"], 3))
         item.pop("engine", None)
-        STATE["queue"].append(item)
+        q = STATE["queue"]
+        # insert behind everything of equal or higher precedence, ahead of anything lower
+        items = list(q)
+        pos = len(items)
+        for i, other in enumerate(items):
+            if other["priority"] > item["priority"]:
+                pos = i
+                break
+        items.insert(pos, item)
+        while len(items) > args.max_queue:            # full: drop the lowest-precedence, oldest item
+            drop = max(range(len(items)), key=lambda i: (items[i]["priority"], -items[i]["at"]))
+            if drop == pos:
+                break
+            items.pop(drop)
+            if drop < pos:
+                pos -= 1
+        q.clear(); q.extend(items)
     COOLDOWN[det["label"].lower()] = time.time()
     log(f"queued [{reason}] {det['kind']}: {det['label']!r} ({int(det['confidence'] * 100)}%)  queue={len(STATE['queue'])}")
     return item
@@ -721,7 +764,7 @@ class Handler(BaseHTTPRequestHandler):
             return self._json(200, {"item": pop_next(), "remaining": len(STATE["queue"])})
         if u.path == "/capture":
             if args.recognizer == "sound":
-                return self._json(409, {"item": None, "error": "capture is unavailable in sound mode"})
+                return self._json(409, {"item": None, "error": "capture is unavailable without the camera"})
             with LOCK:
                 best, paused = STATE["best"], STATE["paused"]
             if paused:
@@ -757,13 +800,31 @@ class Handler(BaseHTTPRequestHandler):
             return self._json(200, snapshot())
         if u.path == "/pause":
             v = q.get("value", ["1"])[0]
-            with LOCK:
-                STATE["paused"] = v not in ("0", "false", "off")
-                paused = STATE["paused"]
-            if SOUND_SERVICE is not None:
-                SOUND_SERVICE.set_paused(paused)
-            else:
+            target = q.get("target", ["all"])[0]
+            paused = v not in ("0", "false", "off")
+            if target in ("all", "camera"):
+                with LOCK:
+                    STATE["paused"] = paused
                 log("CAMERA PAUSED" if paused else "camera resumed")
+            if target in ("all", "mic") and SOUND_SERVICE is not None:
+                SOUND_SERVICE.set_paused(paused)
+            return self._json(200, snapshot())
+        if u.path == "/wake":
+            name = q.get("name", [""])[0].strip()
+            aliases = [a.strip() for a in q.get("aliases", [""])[0].split(",") if a.strip()]
+            if not name:
+                return self._json(400, {"error": "name required"})
+            try:
+                if SOUND_SERVICE is not None:
+                    SOUND_SERVICE.set_names(name, aliases)
+                else:
+                    from sound_mode import NameGate
+                    NameGate(name, aliases)
+                    with LOCK:
+                        STATE["sound"].update(wake_name=name, aliases=aliases)
+            except ValueError as exc:
+                return self._json(400, {"error": str(exc)})
+            save_wake(name, aliases)
             return self._json(200, snapshot())
         if u.path == "/mode":
             v = q.get("value", [""])[0]
@@ -777,30 +838,36 @@ class Handler(BaseHTTPRequestHandler):
 
 
 if __name__ == "__main__":
-    if args.recognizer == "sound":
+    if args.recognizer in ("sound", "both"):
         try:
             from sound_mode import SoundConfig, SoundService, SoundSetupError
+            mic = args.mic
+            if mic is None:
+                import sounddevice as sd
+                mic = str(sd.query_devices(kind="input")["name"])
             SOUND_SERVICE = SoundService(
                 SoundConfig(
                     wake_name=args.wake_name.strip(), aliases=tuple(args.wake_alias),
-                    microphone=args.mic, api_key=OPENAI_KEY or "", model=args.transcription_model,
+                    microphone=mic, api_key=OPENAI_KEY or "", model=args.transcription_model,
                     request_timeout=args.transcription_timeout,
                 ),
                 on_result=publish_speech, on_status=update_sound_status, logger=log,
             )
             SOUND_SERVICE.start()
-        except (SoundSetupError, ValueError) as exc:
+        except Exception as exc:
+            SOUND_SERVICE = None
             update_sound_status({"state": "error", "available": False, "listening": False, "error": str(exc)})
             log(f"could not start sound mode: {exc}")
-            raise SystemExit(2)
-    else:
+            if args.recognizer == "sound":
+                raise SystemExit(2)
+    if args.recognizer in ("camera", "both"):
         threading.Thread(target=capture_loop, daemon=True).start()
         threading.Thread(target=preview_loop, daemon=True).start()
         threading.Thread(target=detect_loop, daemon=True).start()
         threading.Thread(target=reader_loop, daemon=True).start()
     if args.direct:
         threading.Thread(target=direct_loop, daemon=True).start()
-    source = f"microphone={args.mic}" if args.recognizer == "sound" else f"camera={CAMERA}"
+    source = " ".join(filter(None, [f"camera={CAMERA}" if args.recognizer != "sound" else "", f"microphone={args.mic or 'default'}" if args.recognizer != "camera" else ""]))
     log(f"bridge on http://0.0.0.0:{args.port}  recognizer={args.recognizer}  {source}  pi={PI_URL}")
     try:
         ThreadingHTTPServer(("0.0.0.0", args.port), Handler).serve_forever()

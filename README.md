@@ -133,65 +133,47 @@ block the command-line tools.
 Bridge API on `:8765`: `GET /state`, `GET /frame.jpg`, `GET /stream.mjpg`,
 `POST /next`, `POST /capture`, `POST /queue?text=`, `POST /clear`,
 `POST /mode?value=auto|manual`, `POST /engine?value=vlm|tesseract|none`,
-`POST /analyze` (read now), `POST /pause?value=1|0`. The dev server forwards
-`/bridge/*` to it.
+`POST /analyze` (read now), `POST /pause?value=1|0&target=all|camera|mic`,
+`POST /wake?name=&aliases=`. The dev server forwards `/bridge/*` to it.
 
 The Pi camera has one consumer at a time: stop the bridge before using
 `tools/pi_camera_view.sh`, and vice versa.
 
 ## Sound mode: Mac microphone → name match → text
 
-Sound mode is separate from camera mode. It does not start the camera, YOLO,
-EAST, Tesseract, Claude, or any other vision worker. Silero VAD finds a spoken
-utterance, OpenAI `gpt-transcribe` transcribes it, and the bridge queues the
-**full utterance only when it contains the configured wearer name or an
-explicit alias**. No speech-to-text model is downloaded or run locally.
+The bridge runs the camera and the Mac microphone **together** by default
+(`--recognizer both`; `camera` or `sound` alone also work). Silero VAD finds
+a spoken utterance, OpenAI `gpt-transcribe` transcribes it, and the bridge
+queues the **full utterance only when it contains the wearer's name or an
+alias**. Rejected speech is never shown, queued, or logged.
+
+**Precedence on the finger: speech that names the wearer › text the camera
+read › objects.** The queue is kept in that order, and a name call
+interrupts a camera message that is already playing.
+
+The name is set from the website (the microphone card on the Finger screen
+and in the lab) and saved in `bridge/wake.json`, so it survives restarts.
+`--wake-name` / `--wake-alias` still work on the command line, and
+`POST /wake?name=Priya&aliases=Pri,Priyan` is the API behind the form.
 
 ```bash
-python3.11 -m venv .venv
-source .venv/bin/activate
-python -m pip install --upgrade pip
-python -m pip install -r bridge/requirements.txt
-
-# Add this line to bridge/.env (never committed):
-# OPENAI_API_KEY=sk-...
-
-python bridge/detect_bridge.py \
-  --recognizer sound \
-  --wake-name "Ritesh" \
-  --wake-alias "Reetesh" \
-  --mic "MacBook Air Microphone"
-
-# In another terminal:
-npm run dev
+python3 -m pip install -r bridge/requirements.txt   # sounddevice, scipy, silero-vad, openai
+# bridge/.env (never committed) needs OPENAI_API_KEY for transcription
+python3 bridge/detect_bridge.py                     # camera + microphone
+python3 bridge/detect_bridge.py --recognizer sound  # microphone only
 ```
-
-“Ritesh, your ride is here” queues the full sentence; “Your ride is here” is
-discarded. Matching uses whole words, and `--wake-alias` can be repeated for
-alternate spellings. Configured names are sent as transcription keyword hints.
-Completed utterances are sent to OpenAI with a 15-second request timeout. Raw
-audio is not saved, and rejected transcript content is never shown, queued, or
-logged.
 
 ### macOS microphone setup
 
-Allow the terminal under **System Settings → Privacy & Security → Microphone**.
-List input names with:
+Allow the app that runs the bridge (Terminal, Cursor, …) under **System
+Settings → Privacy & Security → Microphone**; without it the mic reads as
+silence. The bridge uses the system default input; list names with
+`python -c 'import sounddevice as s; print(s.query_devices())'` and pass one
+with `--mic` to override.
 
-```bash
-python -c 'import sounddevice as s; print(s.query_devices())'
-```
-
-Pass the exact Mac input name or index with `--mic`; the bridge will not silently
-switch to the iPhone microphone.
-
-The Sound lab shows levels, state, latency, and counts. **Pause mic** and
-**Stop** discard buffered work. Run tests with:
-
-```bash
-python -m unittest discover -s bridge/tests -v
-```
-
+The microphone card shows level, state, latency and counts. **Pause mic**
+and **Pause camera** in the top bar are independent latches; **Stop**
+discards buffered work. Tests: `python -m unittest discover -s bridge/tests -v`.
 ## Real hardware: Raspberry Pi Zero 2 W + 6 solenoids
 
 The finger module is a Raspberry Pi Zero 2 W driving six 12 V solenoids

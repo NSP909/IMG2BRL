@@ -629,3 +629,9 @@ input[type='range'] { width: 100%; accent-color: var(--ink); margin: 0; }
 .sound__stats { display: flex; flex-wrap: wrap; gap: 7px 16px; }
 .sound__last { display: flex; align-items: center; gap: 10px; font-size: 15px; }
 .sound__error { color: #8f1d17; background: #fff3f1; border: 1px solid #ecc8c3; border-radius: 8px; padding: 9px 11px; }
+
+/* ---------------- wearer name ---------------- */
+.sound__name { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr) auto; gap: 8px; }
+.sound__name .input { height: 34px; }
+.sound__name .btn { height: 34px; padding: 0 12px; font-size: 13px; }
+@media (max-width: 560px) { .sound__name { grid-template-columns: 1fr; } }

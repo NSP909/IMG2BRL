@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import collections
+import dataclasses
 import math
 import queue
 import re
@@ -160,6 +161,18 @@ class SoundService:
     def status(self, **values: Any) -> None:
         self.on_status(values)
 
+    def names(self) -> tuple[str, ...]:
+        return tuple(dict.fromkeys((self.config.wake_name, *self.config.aliases)))
+
+    def set_names(self, wake_name: str, aliases: Sequence[str] = ()) -> None:
+        """Change the wearer name and aliases while running (used by the website)."""
+        gate = NameGate(wake_name, aliases)          # validates before anything is swapped
+        with self.lock:
+            self.config = dataclasses.replace(self.config, wake_name=wake_name, aliases=tuple(aliases))
+            self.gate = gate
+        self.status(wake_name=wake_name, aliases=list(aliases))
+        self.log(f"now listening for {wake_name!r}" + (f" (aliases: {', '.join(aliases)})" if aliases else ""))
+
     def start(self) -> None:
         if not self.config.api_key:
             raise SoundSetupError("OPENAI_API_KEY missing; add it to bridge/.env")
@@ -262,10 +275,9 @@ class SoundService:
         import io
         import wave
 
-        names = tuple(dict.fromkeys((self.config.wake_name, *self.config.aliases)))
-        prompt = f"Expected name spellings: {', '.join(names)}."
-
         def transcribe(audio: np.ndarray) -> str:
+            names = self.names()                      # read live: the name can change at runtime
+            prompt = f"Expected name spellings: {', '.join(names)}."
             pcm = (np.clip(audio, -1.0, 1.0) * 32767).astype("<i2")
             wav = io.BytesIO()
             with wave.open(wav, "wb") as output:
@@ -301,7 +313,9 @@ class SoundService:
             latency = int((time.monotonic() - started) * 1000)
             if not self._current(generation):
                 continue
-            accepted, reason = self.gate.check(transcript)
+            with self.lock:
+                gate = self.gate
+            accepted, reason = gate.check(transcript)
             transcript = ""
             if accepted:
                 self.accepted += 1

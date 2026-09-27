@@ -18,6 +18,8 @@ export interface QueueItem extends BridgeDetection {
   id: string;
   at: number;
   source: 'camera' | 'microphone';
+  /** 0 speech, 1 text, 2 object: the queue is kept in this order. */
+  priority: number;
 }
 
 export interface BridgeStats {
@@ -30,7 +32,7 @@ export interface BridgeStats {
 }
 
 export type Engine = 'vlm' | 'tesseract' | 'none';
-export type Recognizer = 'camera' | 'sound';
+export type Recognizer = 'camera' | 'sound' | 'both';
 
 export type SoundWorkerState = 'off' | 'starting' | 'loading' | 'listening' | 'speech' | 'transcribing' | 'paused' | 'error' | 'stopped';
 
@@ -180,4 +182,15 @@ export function bridgeAnalyze(baseUrl: string): Promise<{ ok: boolean }> {
 
 export function bridgeSetPaused(baseUrl: string, paused: boolean): Promise<BridgeState> {
   return post<BridgeState>(baseUrl, `/pause?value=${paused ? 1 : 0}`);
+}
+
+/** Change the wearer name (and comma-separated aliases) the microphone listens for. */
+export function bridgeSetWake(baseUrl: string, name: string, aliases: string[]): Promise<BridgeState> {
+  return post<BridgeState>(baseUrl, `/wake?name=${encodeURIComponent(name)}&aliases=${encodeURIComponent(aliases.join(','))}`);
+}
+
+export type PauseTarget = 'all' | 'camera' | 'mic';
+
+export function bridgeSetPausedTarget(baseUrl: string, paused: boolean, target: PauseTarget): Promise<BridgeState> {
+  return post<BridgeState>(baseUrl, `/pause?value=${paused ? 1 : 0}&target=${target}`);
 }
