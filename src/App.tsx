@@ -7,7 +7,7 @@ import { useBridge } from './hooks/useBridge';
 import { TopBar, type Status, type View } from './components/TopBar';
 import { LabView } from './components/LabView';
 import { Viewfinder, type LiveFeed } from './components/Viewfinder';
-import { bridgeSendAslFrame, type AslStatus } from './lib/bridge';
+import { bridgeSendAslFrame, bridgeSendCameraFrame, type AslStatus } from './lib/bridge';
 import { BragiPanel } from './components/BragiPanel';
 import { DetectionCard } from './components/DetectionCard';
 import { QueueCard } from './components/QueueCard';
@@ -218,11 +218,18 @@ export default function App() {
     [bridgeSetCameraMode],
   );
   const { baseUrl } = bridge;
-  const handleAslFrame = useCallback(
+  // Browser camera drives detection whenever the bridge's own OS camera
+  // access isn't the one supplying frames -- true for ASL always (see
+  // BragiPanel/asl_mode.py), and true for Rune whenever the bridge is up but
+  // its camera isn't delivering (same root cause: a plain command-line
+  // Python process often can't get an OS camera-permission prompt at all).
+  const browserFeedActive = aslMode || (bridge.online && !(bridge.state?.camera_ok ?? false));
+  const handleFrame = useCallback(
     (blob: Blob) => {
-      void bridgeSendAslFrame(baseUrl, blob);
+      if (aslMode) void bridgeSendAslFrame(baseUrl, blob);
+      else void bridgeSendCameraFrame(baseUrl, blob);
     },
-    [baseUrl],
+    [aslMode, baseUrl],
   );
 
   // Bragi's spoken-letter history: the bridge only reports the single most
@@ -289,7 +296,8 @@ export default function App() {
               onCapture={capture}
               live={liveFeed}
               aslActive={aslMode}
-              onAslFrame={handleAslFrame}
+              browserFeedActive={browserFeedActive}
+              onFrame={handleFrame}
             />
           )}
           {hasMic && <SoundPanel bridge={bridge} />}

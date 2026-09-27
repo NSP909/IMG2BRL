@@ -4,10 +4,11 @@ import type { BridgeDetection, BridgeStats } from '../lib/bridge';
 import { useCamera } from '../hooks/useCamera';
 import { CameraIcon, ScanIcon } from './Icons';
 
-/** How often to POST a captured frame to the bridge while in ASL mode. */
-const ASL_CAPTURE_MS = 350;
+/** How often to POST a captured frame to the bridge while browser-fed. */
+const CAPTURE_MS = 350;
 
-/** What the viewfinder shows when the Pi camera bridge is connected. */
+/** What the viewfinder shows when the bridge is connected (Pi, laptop
+ * OpenCV, or a browser-fed frame -- this doesn't know or care which). */
 export interface LiveFeed {
   streamUrl: string;
   cameraOk: boolean;
@@ -23,32 +24,38 @@ interface Props {
   scanning: boolean;
   onCapture(): void;
   live?: LiveFeed | null;
-  /** ASL mode: use the browser's own camera (getUserMedia) instead of the Pi
-   * stream, and POST captured frames to the bridge -- lets ASL be tested
-   * without granting the bridge process its own OS camera permission. */
+  /** ASL mode specifically (changes the hint text and hides the capture bar,
+   * which doesn't apply to Bragi -- it never queues anything). */
   aslActive?: boolean;
-  onAslFrame?: (blob: Blob) => void;
+  /** True whenever the browser's own camera (getUserMedia) should be driving
+   * detection instead of the bridge process's own OS camera access -- true
+   * for ASL always, and true for Rune whenever the bridge can't open its own
+   * camera. Same underlying fix in both cases: a plain command-line Python
+   * process often can't even prompt for camera permission (no app bundle to
+   * attach the OS request to), so the browser tab does it instead. */
+  browserFeedActive?: boolean;
+  onFrame?: (blob: Blob) => void;
 }
 
-export function Viewfinder({ detection, scanning, onCapture, live, aslActive, onAslFrame }: Props) {
+export function Viewfinder({ detection, scanning, onCapture, live, aslActive, browserFeedActive, onFrame }: Props) {
   const cam = useCamera();
   const webcam = cam.state === 'on';
-  // In ASL mode the browser's own camera is the source of truth, even if a
-  // Pi-side bridge stream also exists -- Bragi answers to a bystander who can
-  // see the wearer, not through the Pi's outward-facing feed.
-  const isLive = Boolean(live) && !aslActive;
+  // A real detection feed exists whenever the bridge has state, regardless of
+  // whether the frames came from its own camera or a browser-fed one -- only
+  // *which element displays it* depends on the frame source.
+  const hasFeed = Boolean(live);
   const box = detection?.box;
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
   const { start: camStart } = cam;
   useEffect(() => {
-    if (aslActive) void camStart();
-  }, [aslActive, camStart]);
+    if (browserFeedActive) void camStart();
+  }, [browserFeedActive, camStart]);
 
-  const onAslFrameRef = useRef(onAslFrame);
-  onAslFrameRef.current = onAslFrame;
+  const onFrameRef = useRef(onFrame);
+  onFrameRef.current = onFrame;
   useEffect(() => {
-    if (!aslActive || cam.state !== 'on') return;
+    if (!browserFeedActive || cam.state !== 'on') return;
     const video = cam.videoRef.current;
     const canvas = canvasRef.current;
     if (!video || !canvas) return;
@@ -59,19 +66,19 @@ export function Viewfinder({ detection, scanning, onCapture, live, aslActive, on
       canvas.width = video.videoWidth;
       canvas.height = video.videoHeight;
       ctx.drawImage(video, 0, 0);
-      canvas.toBlob((blob) => { if (blob) onAslFrameRef.current?.(blob); }, 'image/jpeg', 0.85);
-    }, ASL_CAPTURE_MS);
+      canvas.toBlob((blob) => { if (blob) onFrameRef.current?.(blob); }, 'image/jpeg', 0.85);
+    }, CAPTURE_MS);
     return () => window.clearInterval(id);
-  }, [aslActive, cam.state, cam.videoRef]);
+  }, [browserFeedActive, cam.state, cam.videoRef]);
 
   return (
     <section className="card viewfinder" aria-label="Camera">
       <div
-        className={`vf__frame ${isLive || webcam ? 'vf__frame--live' : ''} ${!aslActive && live?.frameSize && live.frameSize[1] > live.frameSize[0] ? 'vf__frame--portrait' : ''}`}
-        style={!aslActive && live?.frameSize ? { aspectRatio: `${live.frameSize[0]} / ${live.frameSize[1]}` } : undefined}
+        className={`vf__frame ${hasFeed || webcam ? 'vf__frame--live' : ''} ${!browserFeedActive && live?.frameSize && live.frameSize[1] > live.frameSize[0] ? 'vf__frame--portrait' : ''}`}
+        style={!browserFeedActive && live?.frameSize ? { aspectRatio: `${live.frameSize[0]} / ${live.frameSize[1]}` } : undefined}
       >
-        {live && !aslActive ? (
-          <img className="vf__video" src={live.streamUrl} alt="Live view from the Pi camera" />
+        {live && !browserFeedActive ? (
+          <img className="vf__video" src={live.streamUrl} alt="Live view from the bridge camera" />
         ) : (
           <video ref={cam.videoRef} className="vf__video" muted playsInline hidden={!webcam} />
         )}
@@ -84,7 +91,7 @@ export function Viewfinder({ detection, scanning, onCapture, live, aslActive, on
 
         {scanning && <div className="vf__scan" aria-hidden />}
 
-        {isLive
+        {hasFeed
           ? live!.detections.map((d, i) => {
               if (!d.box) return null;
               const isBest = live!.best !== null && d.label === live!.best.label && d.kind === live!.best.kind;
@@ -113,16 +120,16 @@ export function Viewfinder({ detection, scanning, onCapture, live, aslActive, on
             )}
 
         <div className="vf__hint">
-          {aslActive
+          {browserFeedActive
             ? cam.state === 'on'
-              ? 'Browser camera · streaming frames to Bragi'
+              ? `Browser camera · streaming frames to ${aslActive ? 'Bragi' : 'Rune'}`
               : cam.state === 'starting'
                 ? 'Starting the browser camera…'
                 : cam.error || 'Waiting for camera permission…'
             : live
               ? live.cameraOk
-                ? `Pi camera · ${live.stats.model} on ${live.stats.device} · ${live.stats.infer_ms} ms · text gate ${live.stats.gate_ms} ms`
-                : 'Bridge running · waiting for the Pi camera'
+                ? `Camera bridge · ${live.stats.model} on ${live.stats.device} · ${live.stats.infer_ms} ms · text gate ${live.stats.gate_ms} ms`
+                : 'Bridge running · waiting for a frame'
               : scanning
                 ? 'Looking for objects and text…'
                 : webcam
@@ -133,14 +140,14 @@ export function Viewfinder({ detection, scanning, onCapture, live, aslActive, on
 
       {!aslActive && (
       <div className="vf__bar">
-        <button type="button" className="btn btn--primary" onClick={onCapture} disabled={scanning || (isLive && !live?.best)}>
+        <button type="button" className="btn btn--primary" onClick={onCapture} disabled={scanning || (hasFeed && !live?.best)}>
           <ScanIcon />
-          {scanning ? 'Scanning…' : isLive ? (live?.best ? `Send “${live.best.label}”` : 'Nothing in view') : 'Capture frame'}
+          {scanning ? 'Scanning…' : hasFeed ? (live?.best ? `Send “${live.best.label}”` : 'Nothing in view') : 'Capture frame'}
         </button>
         <div className="vf__bar-right">
-          {isLive ? (
+          {hasFeed ? (
             <span className="small muted">{live?.detections.length ?? 0} in view</span>
-          ) : (
+          ) : browserFeedActive ? null : (
             <>
               {cam.error && <span className="small muted">{cam.error}</span>}
               <button

@@ -266,3 +266,20 @@ export async function bridgeSendAslFrame(baseUrl: string, blob: Blob): Promise<A
     return null;
   }
 }
+
+/** Browser-captured frame (getUserMedia) for Rune's object/text detection,
+ * same reasoning as bridgeSendAslFrame: lets detect_loop() run without this
+ * process's own OS camera permission. Feeds STATE["frame"] directly, so it
+ * works no matter which camera_mode is active. */
+export async function bridgeSendCameraFrame(baseUrl: string, blob: Blob): Promise<boolean> {
+  try {
+    const res = await fetch(`${baseUrl}/camera_frame`, {
+      method: 'POST',
+      body: blob,
+      headers: { 'Content-Type': 'image/jpeg' },
+    });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}

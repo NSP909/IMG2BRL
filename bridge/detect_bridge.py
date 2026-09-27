@@ -180,7 +180,7 @@ LOCK = threading.Lock()
 SOUND_SERVICE = None
 ASL = asl_mode.AslRecognizer(classifier=args.asl_classifier, stable_passes=args.asl_stable)
 STATE = {
-    "frame": None, "jpeg": None, "frame_at": 0.0, "camera_ok": False,
+    "frame": None, "jpeg": None, "frame_at": 0.0, "camera_ok": False, "browser_frame_at": 0.0,
     "detections": [], "best": None, "mode": args.mode, "queue": collections.deque(),   # kept sorted: speech, then text, then objects
     # Same camera as objects/text; interpreted as ASL fingerspelling and spoken
     # locally instead of queued as braille. See the module docstring above.
@@ -243,7 +243,12 @@ def capture_loop():
         cap = cv2.VideoCapture(src, cv2.CAP_FFMPEG if isinstance(src, str) else cv2.CAP_ANY)
         if not cap.isOpened():
             with LOCK:
-                STATE["camera_ok"] = False
+                # Don't stomp on a browser-fed frame (POST /camera_frame) just
+                # because this process's own OS camera access failed -- that's
+                # a real, common case (see /camera_frame's docstring), not an
+                # error condition once a browser is actively supplying frames.
+                if time.time() - STATE["browser_frame_at"] > 2.0:
+                    STATE["camera_ok"] = False
             time.sleep(1.0)
             continue
         log(f"camera connected: {CAMERA}")
@@ -267,7 +272,8 @@ def capture_loop():
                     t0 = time.time()
         cap.release()
         with LOCK:
-            STATE["camera_ok"] = False
+            if time.time() - STATE["browser_frame_at"] > 2.0:
+                STATE["camera_ok"] = False
         log("camera stream ended, reconnecting")
         time.sleep(1.0)
 
@@ -1056,6 +1062,30 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json(400, {"error": "could not decode image"})
             asl_pass(frame)
             return self._json(200, {"asl": dict(STATE["asl"])})
+        if u.path == "/camera_frame":
+            # Browser-captured frame (getUserMedia) for Rune's object/text
+            # detection, same reasoning as /asl_frame: this process's own OS
+            # camera access needs a permission grant that a plain command-line
+            # Python process often can't even prompt for (no app bundle to
+            # attach the request to). Feed detect_loop() the same way
+            # capture_loop() would -- it only ever reads STATE["frame"], it
+            # doesn't care how that got set.
+            import cv2  # local import: matches capture_loop()'s pattern elsewhere in this file
+            length = int(self.headers.get("Content-Length", 0))
+            if length <= 0:
+                return self._json(400, {"error": "empty request body"})
+            body = self.rfile.read(length)
+            frame = cv2.imdecode(np.frombuffer(body, dtype=np.uint8), cv2.IMREAD_COLOR)
+            if frame is None:
+                return self._json(400, {"error": "could not decode image"})
+            now = time.time()
+            with LOCK:
+                STATE["frame"] = frame
+                STATE["frame_at"] = now
+                STATE["frame_size"] = [frame.shape[1], frame.shape[0]]
+                STATE["camera_ok"] = True
+                STATE["browser_frame_at"] = now
+            return self._json(200, {"ok": True})
         return self._json(404, {"error": "unknown path"})
 
 
