@@ -6,6 +6,7 @@ mediapipe==0.10.30  # ASL mode: HandLandmarker (bridge/asl_mode.py). Pinned: 1.0
                     # The skeleton CNN reads this HandLandmarker's 21 points too, so it needs no older
                     # mediapipe (0.10.21's legacy Hands API has no wheels for Python 3.13+).
 onnxruntime>=1.20   # Bragi's 1.2 MB skeleton CNN (bridge/asl_cnn.py)
+rapidocr-onnxruntime>=1.4  # text gate: PP-OCRv4 mobile detector (bridge/detect_bridge.py)
 onnx>=1.16          # only for bridge/train_cnn_space.py (teaching the CNN the Space sign)
                     # Speech uses macOS `say`, no extra package.
 # Mac sound mode (direct dependencies pinned for the Python 3.11 demo environment)

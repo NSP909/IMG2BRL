@@ -79,7 +79,10 @@ ap.add_argument("--classes", default="person,cell phone,laptop,bottle,chair,couc
                 help="comma-separated COCO classes to keep")
 ap.add_argument("--interval", type=float, default=0.5, help="seconds between detection passes")
 ap.add_argument("--east", default=os.path.join(HERE, "models", "frozen_east_text_detection.pb"), help="EAST text detector weights")
-ap.add_argument("--text-conf", type=float, default=0.6, help="EAST score for a cell to count as text")
+ap.add_argument("--text-detector", choices=["ppocr", "east"], default="ppocr",
+                help="text-presence gate: PP-OCRv4 mobile detector (default, high recall) or the older EAST")
+ap.add_argument("--text-side", type=int, default=960, help="ppocr: long side of the image the detector sees (higher = smaller text)")
+ap.add_argument("--text-conf", type=float, default=0.6, help="EAST: cell score; ppocr: mean score of a text region")
 ap.add_argument("--text-cells", type=int, default=4, help="EAST cells needed to call the frame 'has text'")
 ap.add_argument("--engine", choices=["vlm", "tesseract", "none"], default=None,
                 help="who reads text once the gate opens; default: vlm when a Claude/OpenAI key exists, else tesseract")
@@ -409,12 +412,32 @@ def run_yolo(model, frame):
     return out
 
 
-# ------------------------------------------------------------------ text gate (EAST)
+# ------------------------------------------------------------------ text gate
+# Default: PP-OCRv4's mobile DB detector (4.6 MB ONNX, from the rapidocr-onnxruntime
+# package). On 400 synthetic 720x1280 frames it caught 94% of text versus 48% for
+# the old EAST gate (82% vs 8% on 10 px text) at ~40 ms. It over-fires on glyph-like
+# shapes; that is fine here because the VLM read decides, and a region the VLM found
+# empty is not re-read until the scene changes (see reader_loop).
 EAST = None
+PPOCR = None
+PPOCR_IN = None
 
 
 def load_east():
-    global EAST
+    """Load the text-presence gate chosen with --text-detector (name kept for callers)."""
+    global EAST, PPOCR, PPOCR_IN
+    if args.text_detector == "ppocr":
+        try:
+            import onnxruntime as ort
+            import rapidocr_onnxruntime
+            path = os.path.join(os.path.dirname(rapidocr_onnxruntime.__file__), "models", "ch_PP-OCRv4_det_infer.onnx")
+            opts = ort.SessionOptions(); opts.intra_op_num_threads = 2
+            PPOCR = ort.InferenceSession(path, opts, providers=["CPUExecutionProvider"])
+            PPOCR_IN = PPOCR.get_inputs()[0].name
+            log(f"text detector: PP-OCRv4 mobile det, long side {args.text_side}")
+            return
+        except Exception as exc:
+            log(f"PP-OCRv4 detector unavailable ({exc}); pip install rapidocr-onnxruntime. Falling back to EAST")
     if os.path.exists(args.east):
         EAST = cv2.dnn.readNet(args.east)
         log(f"text detector: EAST ({os.path.basename(args.east)})")
@@ -422,8 +445,35 @@ def load_east():
         log(f"!! EAST weights missing at {args.east}; text gate disabled (objects only)")
 
 
+def _ppocr_gate(frame):
+    H, W = frame.shape[:2]
+    r = args.text_side / max(H, W)
+    nh, nw = max(32, int(round(H * r / 32)) * 32), max(32, int(round(W * r / 32)) * 32)
+    x = cv2.resize(frame, (nw, nh)).astype(np.float32)[:, :, ::-1] / 255.0
+    prob = PPOCR.run(None, {PPOCR_IN: ((x - 0.5) / 0.5).transpose(2, 0, 1)[None]})[0][0, 0]
+    mask = (prob > 0.3).astype(np.uint8)
+    n, lab, stats, _ = cv2.connectedComponentsWithStats(mask, connectivity=8)
+    regions = []
+    for i in range(1, n):
+        if stats[i, cv2.CC_STAT_AREA] < 60:
+            continue
+        score = float(prob[lab == i].mean())
+        if score >= args.text_conf:
+            regions.append((stats[i], score))
+    if not regions:
+        return 0, float(prob.max()), None
+    x1 = min(st[cv2.CC_STAT_LEFT] for st, _ in regions); y1 = min(st[cv2.CC_STAT_TOP] for st, _ in regions)
+    x2 = max(st[cv2.CC_STAT_LEFT] + st[cv2.CC_STAT_WIDTH] for st, _ in regions)
+    y2 = max(st[cv2.CC_STAT_TOP] + st[cv2.CC_STAT_HEIGHT] for st, _ in regions)
+    box = {"x": round(x1 / nw, 4), "y": round(y1 / nh, 4), "w": round((x2 - x1) / nw, 4), "h": round((y2 - y1) / nh, 4)}
+    # report region count in "cells" units so --text-cells keeps one meaning: >=1 region is text
+    return len(regions) * max(1, args.text_cells), max(sc for _, sc in regions), box
+
+
 def text_gate(frame, size=320):
     """Is there text in the frame? Returns (cells, max score, normalised union box or None)."""
+    if PPOCR is not None:
+        return _ppocr_gate(frame)
     if EAST is None:
         return 0, 0.0, None
     H, W = frame.shape[:2]
@@ -598,6 +648,15 @@ def pick_vlm_model():
     return None, "no ANTHROPIC_API_KEY / OPENAI_API_KEY in bridge/.env"
 
 
+def _iou(a, b):
+    """Overlap of two normalised boxes (0..1)."""
+    x1, y1 = max(a["x"], b["x"]), max(a["y"], b["y"])
+    x2, y2 = min(a["x"] + a["w"], b["x"] + b["w"]), min(a["y"] + a["h"], b["y"] + b["h"])
+    inter = max(0.0, x2 - x1) * max(0.0, y2 - y1)
+    union = a["w"] * a["h"] + b["w"] * b["h"] - inter
+    return inter / union if union > 0 else 0.0
+
+
 def reader_loop():
     """Waits for the gate; performs at most one cloud read per --read-gap seconds."""
     model, err = pick_vlm_model()
@@ -607,7 +666,7 @@ def reader_loop():
     if err:
         log(f"cloud reader unavailable ({err}); Tesseract will read text")
     else:
-        log(f"text reader: {VLM_PROVIDER} {model}; gate = EAST, min gap {args.read_gap:.0f} s")
+        log(f"text reader: {VLM_PROVIDER} {model}; gate = {args.text_detector}, min gap {args.read_gap:.0f} s")
     while True:
         READ_NOW.wait()
         READ_NOW.clear()
@@ -619,6 +678,15 @@ def reader_loop():
         if frame is None or paused or engine == "none":
             continue
         if not forced and since < args.read_gap:
+            continue
+        # Cost guard for a high-recall gate: if the last read of this view found no text,
+        # don't pay for another until the scene changes (or 30 s pass).
+        with LOCK:
+            empty_at = STATE["read"].get("empty_at", 0.0)
+            empty_box = STATE["read"].get("empty_box")
+            changed_at = STATE["scene"]["changed_at"]
+        same_region = _iou(box, empty_box) >= 0.3 if (box and empty_box) else not box and not empty_box
+        if not forced and empty_at and changed_at < empty_at and same_region and time.time() - empty_at < 30:
             continue
         use_cloud = engine == "vlm" and model is not None
         with LOCK:
@@ -642,7 +710,14 @@ def reader_loop():
             if rerr:
                 r["error"] = rerr
             else:
+                prev_text = (r.get("text") or "").strip().lower()
                 r.update(res)
+                txt = (res.get("text") or "").strip()
+                junk = len(re.findall(r"[A-Za-z0-9]", txt)) < 2 or res.get("confidence", 0) < 0.5
+                repeat = txt.lower() == prev_text and bool(txt)
+                # nothing new in this view: hold further reads until the scene changes (or 30 s)
+                r["empty_at"] = time.time() if (junk or repeat) else 0.0
+                r["empty_box"] = box if (junk or repeat) else None
         if rerr:
             log(f"read error ({eng}): {rerr[:120]}")
         elif res.get("error"):

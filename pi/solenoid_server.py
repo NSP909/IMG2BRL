@@ -265,7 +265,18 @@ fetch('/state').then(r=>r.json()).then(render).catch(()=>setConn(false));
 AP_CON = "IMG2BRL-AP"
 
 
+_WIFI_CACHE = {"at": 0.0, "info": None}
+
+
 def wifi_info():
+    """Cached for 5 s: asking NetworkManager costs ~130 ms, far too slow for every reply."""
+    now = time.time()
+    if _WIFI_CACHE["info"] is None or now - _WIFI_CACHE["at"] > 5.0:
+        _WIFI_CACHE["info"], _WIFI_CACHE["at"] = _wifi_info_uncached(), now
+    return _WIFI_CACHE["info"]
+
+
+def _wifi_info_uncached():
     """Which Wi-Fi mode the Pi is in, from NetworkManager."""
     try:
         out = subprocess.run(["nmcli", "-t", "-f", "DEVICE,STATE,CONNECTION", "dev", "status"], capture_output=True, text=True, timeout=5).stdout
@@ -285,8 +296,10 @@ def wifi_switch(mode):
     """ap: host the IMG2BRL hotspot; client: rejoin saved networks, highest priority first."""
     if mode == "ap":
         ok, msg = _nm("con", "up", AP_CON)
+        _WIFI_CACHE["info"] = None
         log(f"wifi -> ap: {msg[:100]}")
         return ok
+    _WIFI_CACHE["info"] = None
     _nm("con", "down", AP_CON, timeout=15)
     out = subprocess.run(["nmcli", "-t", "-f", "NAME,TYPE,AUTOCONNECT-PRIORITY", "con", "show"], capture_output=True, text=True, timeout=10).stdout
     saved = sorted(((int(p or 0), n) for n, t, p in (l.split(":") for l in out.splitlines() if l.count(":") == 2)
