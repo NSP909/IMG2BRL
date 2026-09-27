@@ -313,6 +313,7 @@ export default function App() {
         onCameraMode={handleCameraMode}
         cameraModeBusy={cameraModeBusy}
         bridgeOffline={!bridge.online}
+        alert={!aslMode ? cameraModeError || bridge.state?.asl.error || null : null}
       />
 
       {view === 'dev' ? (
@@ -370,12 +371,6 @@ export default function App() {
       </main>
       )}
 
-      <footer className="foot small muted">
-        Uncontracted braille, one 3 × 2 cell at a time. Pin numbering follows the standard cell: 1–3 down the left column, 4–6 down the right.
-        {hardware.live ? ` Live on the Pi at ${hardware.host}.` : ' Hardware offline: simulating.'}
-        {bridge.online ? ` ${recognizer === 'both' ? 'Camera + microphone' : soundMode ? 'Sound' : 'Camera'} bridge connected.` : ' Bridge not connected: start bridge/detect_bridge.py.'}
-        {!aslMode && (cameraModeError || bridge.state?.asl.error) ? ` ⚠ ${cameraModeError || bridge.state?.asl.error}` : ''}
-      </footer>
     </div>
   );
 }

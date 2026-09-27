@@ -40,6 +40,8 @@ interface Props {
   cameraModeBusy: boolean;
   /** No bridge process is reachable at all, so a click here can't do anything. */
   bridgeOffline: boolean;
+  /** Something failed that the user needs to know about (e.g. switching to Bragi). */
+  alert?: string | null;
 }
 
 const STATUS_TEXT: Record<Status, string> = {
@@ -50,7 +52,7 @@ const STATUS_TEXT: Record<Status, string> = {
   complete: 'Message complete',
 };
 
-export function TopBar({ status, index, total, live, host, rig, onRig, hardwareOnline, view, onView, onStop, pinsLocked, onLockPins, recognizer, cameraPaused, onPauseCamera, micPaused, onPauseMic, nearbyVoice, cameraMode, onCameraMode, cameraModeBusy, bridgeOffline }: Props) {
+export function TopBar({ status, index, total, live, host, rig, onRig, hardwareOnline, view, onView, onStop, pinsLocked, onLockPins, recognizer, cameraPaused, onPauseCamera, micPaused, onPauseMic, nearbyVoice, cameraMode, onCameraMode, cameraModeBusy, bridgeOffline, alert }: Props) {
   const showCount = status === 'streaming' || status === 'paused';
   const hasMic = recognizer !== 'camera';
   const hasCamera = recognizer !== 'sound';
@@ -104,6 +106,18 @@ export function TopBar({ status, index, total, live, host, rig, onRig, hardwareO
               {cameraModeBusy && cameraMode !== 'asl' ? 'Loading Bragi…' : 'Bragi'}
             </button>
           </nav>
+        )}
+        {bridgeOffline && (
+          <span className="pill pill--warn" title="Start the recognition bridge: bridge/.venv/bin/python3 bridge/detect_bridge.py">
+            <span className="pill__dot pill__dot--sim" />
+            Bridge offline
+          </span>
+        )}
+        {alert && (
+          <span className="pill pill--error" title={alert}>
+            <span className="pill__dot pill__dot--locked" />
+            {alert.length > 42 ? `${alert.slice(0, 40)}…` : alert}
+          </span>
         )}
         {nearbyVoice && (
           <span className="pill pill--warn" title="Speech from a person close to the camera is accepted without the name">
