@@ -37,6 +37,7 @@ export default function App() {
   });
   const [detection, setDetection] = useState<Detection | null>(initialDetection);
   const [scanning, setScanning] = useState(false);
+  const [cameraModeBusy, setCameraModeBusy] = useState(false);
   const sampleCursor = useRef(0);
   const scanTimer = useRef<number | null>(null);
 
@@ -193,6 +194,17 @@ export default function App() {
   const recognizer = bridge.state?.recognizer ?? 'camera';
   const soundMode = recognizer === 'sound';
   const hasMic = recognizer !== 'camera';
+  const cameraMode = bridge.state?.camera_mode ?? 'objects';
+  const aslMode = cameraMode === 'asl';
+  const { setCameraMode: bridgeSetCameraMode } = bridge;
+  const handleCameraMode = useCallback(
+    async (mode: typeof cameraMode) => {
+      setCameraModeBusy(true);
+      await bridgeSetCameraMode(mode);
+      setCameraModeBusy(false);
+    },
+    [bridgeSetCameraMode],
+  );
   const liveFeed: LiveFeed | null =
     bridge.online && bridge.state && !soundMode
       ? {
@@ -225,6 +237,9 @@ export default function App() {
         micPaused={bridge.micPaused}
         onPauseMic={bridge.setMicPaused}
         nearbyVoice={bridge.state?.proximity.enabled ?? false}
+        cameraMode={cameraMode}
+        onCameraMode={handleCameraMode}
+        cameraModeBusy={cameraModeBusy}
       />
 
       {view === 'lab' ? (
@@ -255,6 +270,15 @@ export default function App() {
         Uncontracted braille, one 3 × 2 cell at a time. Pin numbering follows the standard cell: 1–3 down the left column, 4–6 down the right.
         {hardware.live ? ` Live on the Pi at ${hardware.host}.` : ' Hardware offline: simulating.'}
         {bridge.online ? ` ${recognizer === 'both' ? 'Camera + microphone' : soundMode ? 'Sound' : 'Camera'} bridge connected.` : ''}
+        {aslMode && bridge.state
+          ? ` Bragi (${bridge.state.asl.classifier}): ${
+              !bridge.state.asl.available
+                ? bridge.state.asl.error || 'loading the hand model…'
+                : bridge.state.asl.label
+                  ? `reading "${bridge.state.asl.label}"`
+                  : 'no hand in view'
+            }${bridge.state.asl.last_spoken ? ` — last spoken "${bridge.state.asl.last_spoken}"` : ''}. Spoken locally, not sent to the pins.`
+          : ''}
       </footer>
     </div>
   );

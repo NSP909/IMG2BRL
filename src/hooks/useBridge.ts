@@ -4,6 +4,7 @@ import {
   bridgeCapture,
   bridgeClear,
   bridgeNext,
+  bridgeSetCameraMode,
   bridgeSetEngine,
   bridgeSetMode,
   bridgeSetPausedTarget,
@@ -14,6 +15,7 @@ import {
   loadBridgeUrl,
   streamUrl,
   type BridgeState,
+  type CameraMode,
   type Engine,
   type QueueItem,
 } from '../lib/bridge';
@@ -47,6 +49,10 @@ export interface Bridge {
   setProximity(enabled: boolean): void;
   /** Clockwise camera rotation. */
   setRotate(deg: 0 | 90 | 180 | 270): void;
+  /** Same camera, interpreted as objects/text (Rune) or ASL fingerspelling
+   * spoken aloud (Bragi). Resolves false (state left unchanged) if the ASL
+   * model failed to load. */
+  setCameraMode(mode: CameraMode): Promise<boolean>;
 }
 
 export function useBridge(): Bridge {
@@ -162,6 +168,19 @@ export function useBridge(): Bridge {
     [baseUrl],
   );
 
+  const setCameraMode = useCallback(
+    async (mode: CameraMode) => {
+      try {
+        setState(await bridgeSetCameraMode(baseUrl, mode));
+        return true;
+      } catch {
+        void refresh(); // pull the real state (e.g. the ASL error) back from the bridge
+        return false;
+      }
+    },
+    [baseUrl, refresh],
+  );
+
   return {
     baseUrl,
     online,
@@ -180,5 +199,6 @@ export function useBridge(): Bridge {
     setWake,
     setProximity,
     setRotate,
+    setCameraMode,
   };
 }

@@ -31,6 +31,13 @@ HTTP on :8765 (CORS open):
   POST /wake?name=Priya&aliases=Pri,Priyan     change the wearer name the microphone listens for
   POST /proximity?enabled=1|0[&threshold=0.55] opt-in: accept speech without the name while a person is close
   POST /rotate?deg=0|90|180|270                rotate camera frames clockwise (saved in bridge/camera.json)
+  POST /camera_mode?value=objects|asl          same camera: YOLO/EAST/Claude, or ASL fingerspelling -> spoken aloud
+
+ASL mode (bridge/asl_mode.py) is the opposite direction from everything else
+here: it reads the *wearer's own* signing and speaks it aloud locally (macOS
+`say`) for a bystander who doesn't know ASL. It never touches the braille
+queue -- that queue exists to tell the wearer about the world, and Bragi is
+the wearer speaking to the world, not to themself.
 
 Sound mode (separate from the camera pipeline):
   python3 bridge/detect_bridge.py --recognizer sound --wake-name Ritesh \
@@ -42,6 +49,8 @@ from urllib.parse import urlparse, parse_qs, quote
 from urllib.request import Request, urlopen
 
 import numpy as np
+
+import asl_mode
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -87,6 +96,11 @@ ap.add_argument("--transcription-model", default="gpt-transcribe",
                 help="sound mode: OpenAI transcription model")
 ap.add_argument("--transcription-timeout", type=float, default=15.0,
                 help="sound mode: maximum seconds for each cloud transcription request")
+ap.add_argument("--asl-classifier", choices=["knn", "geometric"], default="knn",
+                help="asl mode: nearest-neighbour match against a recorded signer (24 letters, needs bridge/models/asl_samples.json), "
+                     "or zero-training-data finger-angle rules (19 letters)")
+ap.add_argument("--asl-stable", type=int, default=2,
+                help="asl mode: consecutive detect passes the same letter must hold before it is spoken")
 args = ap.parse_args()
 WAKE_FILE = os.path.join(HERE, "wake.json")
 
@@ -164,9 +178,15 @@ if args.engine is None:
 
 LOCK = threading.Lock()
 SOUND_SERVICE = None
+ASL = asl_mode.AslRecognizer(classifier=args.asl_classifier, stable_passes=args.asl_stable)
 STATE = {
     "frame": None, "jpeg": None, "frame_at": 0.0, "camera_ok": False,
     "detections": [], "best": None, "mode": args.mode, "queue": collections.deque(),   # kept sorted: speech, then text, then objects
+    # Same camera as objects/text; interpreted as ASL fingerspelling and spoken
+    # locally instead of queued as braille. See the module docstring above.
+    "camera_mode": "objects",
+    "asl": {"available": False, "classifier": args.asl_classifier, "label": None,
+            "stable_count": 0, "stable_needed": args.asl_stable, "last_spoken": None, "error": None},
     "rotate": load_rotate(), "frame_size": None,
     "visible": [], "scene": {"diff": 0.0, "changed_at": 0.0, "changes": 0, "pruned": 0},
     # Nearby-voice pathway (opt-in, off at every start): when a person is close to the
@@ -684,6 +704,22 @@ def prune_queue(visible, text_present, force=False):
         log(f"dropped [{'scene change' if force else 'out of view'}] {item['kind']}: {item['label']!r}")
 
 
+def asl_pass(frame):
+    """One camera frame through the ASL recognizer. Speaks locally on a newly
+    confirmed stable letter; never touches the braille queue (see the module
+    docstring for why)."""
+    letter = ASL.process(frame)
+    s = ASL.state
+    with LOCK:
+        STATE["asl"].update(
+            available=s.available, label=s.label, stable_count=s.stable_count,
+            last_spoken=s.last_spoken, error=s.error,
+        )
+    if letter:
+        asl_mode.speak(letter)
+        log(f"asl: spoke {letter!r}")
+
+
 def detect_loop():
     model = load_model()
     load_east()
@@ -703,6 +739,15 @@ def detect_loop():
             time.sleep(0.3)
             continue
         small = cv2.resize(frame, (960, int(frame.shape[0] * 960 / frame.shape[1]))) if frame.shape[1] > 960 else frame
+        with LOCK:
+            camera_mode = STATE["camera_mode"]
+        if camera_mode == "asl":
+            asl_pass(small)
+            with LOCK:
+                STATE["detections"], STATE["best"] = [], None
+                STATE["text"].update(present=False, cells=0, box=None)
+            time.sleep(args.interval)
+            continue
         t = time.time()
         dets = run_yolo(model, small)
         infer_ms = int((time.time() - t) * 1000)
@@ -811,6 +856,7 @@ def snapshot():
         gap_left = max(0.0, args.read_gap - (time.time() - r["requested_at"]))
         return {
             "recognizer": STATE["recognizer"], "sound": dict(STATE["sound"]),
+            "camera_mode": STATE["camera_mode"], "asl": dict(STATE["asl"]),
             "rotate": STATE["rotate"], "frame_size": STATE["frame_size"],
             "visible": list(STATE["visible"]), "scene": dict(STATE["scene"]),
             "proximity": {k: v for k, v in STATE["proximity"].items() if k != "grace_until"},
@@ -976,6 +1022,22 @@ class Handler(BaseHTTPRequestHandler):
             with LOCK:
                 STATE["mode"] = v
             log(f"mode -> {v}")
+            return self._json(200, snapshot())
+        if u.path == "/camera_mode":
+            v = q.get("value", [""])[0]
+            if v not in ("objects", "asl"):
+                return self._json(400, {"error": "value must be objects or asl"})
+            if v == "asl":
+                ASL.ensure_loaded()
+                with LOCK:
+                    STATE["asl"].update(available=ASL.state.available, error=ASL.state.error)
+                if not ASL.state.available:
+                    return self._json(503, {"error": ASL.state.error or "ASL recognizer failed to load", **snapshot()})
+            with LOCK:
+                STATE["camera_mode"] = v
+                if v == "objects":
+                    STATE["asl"].update(label=None, stable_count=0, last_spoken=None)
+            log(f"camera mode -> {v}")
             return self._json(200, snapshot())
         return self._json(404, {"error": "unknown path"})
 

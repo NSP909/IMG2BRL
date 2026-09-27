@@ -1,6 +1,9 @@
 ultralytics>=8.4
 opencv-python>=4.9
 numpy
+mediapipe==0.10.30  # ASL mode: HandLandmarker (bridge/asl_mode.py). Pinned: 1.0.x crashes on load on
+                    # Apple Silicon (DrishtiMetalHelper "Service is unavailable", a mediapipe bug, not ours).
+                    # Speech uses macOS `say`, no extra package.
 # Mac sound mode (direct dependencies pinned for the Python 3.11 demo environment)
 sounddevice==0.5.6
 scipy==1.16.3

@@ -10,5 +10,6 @@ __pycache__/
 **/.env
 bridge/models/*.pb
 bridge/models/*.onnx
+bridge/models/*.task
 bridge/wake.json
 bridge/camera.json

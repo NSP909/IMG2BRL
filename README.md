@@ -202,6 +202,54 @@ with `--mic` to override.
 The microphone card shows level, state, latency and counts. **Pause mic**
 and **Pause camera** in the top bar are independent latches; **Stop**
 discards buffered work. Tests: `python -m unittest discover -s bridge/tests -v`.
+
+## ASL mode (Bragi): the wearer's own signing → spoken aloud
+
+Everything above is one direction: the world, read into braille, for the
+wearer. ASL mode is the other direction. Point the same camera at your own
+other hand and fingerspell; the bridge speaks each letter aloud (macOS
+`say`, local, no network, no API key) for a bystander who doesn't know ASL.
+**It never touches the braille queue** — that queue exists to tell the
+wearer about the world, and this is the wearer speaking to the world, not
+to themselves.
+
+Toggle it from the top bar (**Rune** / **Bragi**, next to the screen tabs)
+or the API directly:
+
+```bash
+POST /camera_mode?value=asl       # switch; loads the hand model on first use
+POST /camera_mode?value=objects   # back to YOLO/EAST/Claude
+```
+
+`GET /state` reports it under `"asl"`: `available`, `classifier`, the
+letter currently being read, how many consecutive passes it's held, the
+last letter spoken, and `error` if the hand model failed to load.
+
+**Recognition**, in `bridge/asl_mode.py`: MediaPipe's `HandLandmarker`
+(the same 21-landmark model as the browser prototype this was ported from)
+feeds one of two classifiers, chosen with `--asl-classifier`:
+
+| Classifier | Letters | Training data | Notes |
+| --- | --- | --- | --- |
+| `knn` (default) | 24 (all static letters) | `bridge/models/asl_samples.json`, 1,440 recorded samples | Matched against a specific recorded signer's hand |
+| `geometric` | 19 | None | Finger-joint-angle rules; no recording needed, weaker on the closed-fist letters (A/S/T/N/M) |
+
+J and Z are excluded from both: they're traced through the air, and this
+reads one still frame at a time. A letter is only spoken once it has held
+for `--asl-stable` consecutive passes (default 2) and differs from the last
+one spoken, so a hand passing through a shape on its way to another one
+doesn't get announced.
+
+```bash
+python3 -m pip install -r bridge/requirements.txt   # adds mediapipe==0.10.30 (pinned: 1.0.x
+                                                     # crashes on load on Apple Silicon, a mediapipe bug)
+python3 bridge/detect_bridge.py                     # ASL mode is a live toggle, not a separate process
+```
+
+The hand model (`hand_landmarker.task`, ~7.8 MB) downloads once to
+`bridge/models/` on first switch to ASL mode, same pattern as the YOLO and
+EAST weights; not committed.
+
 ## Real hardware: Raspberry Pi Zero 2 W + 6 solenoids
 
 The finger module is a Raspberry Pi Zero 2 W driving six 12 V solenoids

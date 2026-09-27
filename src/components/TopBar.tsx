@@ -1,5 +1,5 @@
 import { CameraIcon, LockIcon, MicIcon, StopIcon } from './Icons';
-import type { Recognizer } from '../lib/bridge';
+import type { CameraMode, Recognizer } from '../lib/bridge';
 
 export type Status = 'idle' | 'scanning' | 'streaming' | 'paused' | 'complete';
 export type View = 'main' | 'lab';
@@ -27,6 +27,11 @@ interface Props {
   onPauseMic(paused: boolean): void;
   /** The opt-in nearby-voice pathway is on: show it, it is easy to forget. */
   nearbyVoice: boolean;
+  /** Same camera, read as objects/text (Rune) or the wearer's own ASL, spoken aloud (Bragi). */
+  cameraMode: CameraMode;
+  onCameraMode(mode: CameraMode): void;
+  /** Set while a mode switch is in flight (loading the hand model can take a moment). */
+  cameraModeBusy: boolean;
 }
 
 const STATUS_TEXT: Record<Status, string> = {
@@ -37,7 +42,7 @@ const STATUS_TEXT: Record<Status, string> = {
   complete: 'Message complete',
 };
 
-export function TopBar({ status, index, total, live, host, view, onView, onStop, pinsLocked, onLockPins, recognizer, cameraPaused, onPauseCamera, micPaused, onPauseMic, nearbyVoice }: Props) {
+export function TopBar({ status, index, total, live, host, view, onView, onStop, pinsLocked, onLockPins, recognizer, cameraPaused, onPauseCamera, micPaused, onPauseMic, nearbyVoice, cameraMode, onCameraMode, cameraModeBusy }: Props) {
   const showCount = status === 'streaming' || status === 'paused';
   const hasMic = recognizer !== 'camera';
   const hasCamera = recognizer !== 'sound';
@@ -68,6 +73,26 @@ export function TopBar({ status, index, total, live, host, view, onView, onStop,
           <button type="button" className={`tab ${view === 'main' ? 'is-active' : ''}`} onClick={() => onView('main')}>Finger</button>
           <button type="button" className={`tab ${view === 'lab' ? 'is-active' : ''}`} onClick={() => onView('lab')}>{hasCamera ? 'Camera lab' : 'Sound lab'}</button>
         </nav>
+        {hasCamera && (
+          <nav className="tabs" aria-label="Camera mode" title="Same camera: read the world (objects/text) or read the wearer's own ASL and speak it aloud">
+            <button
+              type="button"
+              className={`tab ${cameraMode === 'objects' ? 'is-active' : ''}`}
+              disabled={cameraModeBusy}
+              onClick={() => onCameraMode('objects')}
+            >
+              Rune
+            </button>
+            <button
+              type="button"
+              className={`tab ${cameraMode === 'asl' ? 'is-active' : ''}`}
+              disabled={cameraModeBusy}
+              onClick={() => onCameraMode('asl')}
+            >
+              {cameraModeBusy && cameraMode !== 'asl' ? 'Loading Bragi…' : 'Bragi'}
+            </button>
+          </nav>
+        )}
         {nearbyVoice && (
           <span className="pill pill--warn" title="Speech from a person close to the camera is accepted without the name">
             <span className="pill__dot pill__dot--sim" />

@@ -45,6 +45,21 @@ export interface BridgeStats {
 
 export type Engine = 'vlm' | 'tesseract' | 'none';
 export type Recognizer = 'camera' | 'sound' | 'both';
+/** Same camera either way: YOLO/EAST/Claude objects+text, or ASL fingerspelling spoken aloud. */
+export type CameraMode = 'objects' | 'asl';
+
+/** Bragi: the wearer's own signing, read from the camera and spoken locally
+ * (macOS `say`) for a bystander who doesn't know ASL. Opposite direction from
+ * everything else here -- it never enters the braille queue. */
+export interface AslStatus {
+  available: boolean;
+  classifier: 'knn' | 'geometric';
+  label: string | null;
+  stable_count: number;
+  stable_needed: number;
+  last_spoken: string | null;
+  error: string | null;
+}
 
 export type SoundWorkerState = 'off' | 'starting' | 'loading' | 'listening' | 'speech' | 'transcribing' | 'paused' | 'error' | 'stopped';
 
@@ -107,6 +122,8 @@ export interface BridgeState {
   visible: string[];
   scene: { diff: number; changed_at: number; changes: number; pruned: number };
   recognizer: Recognizer;
+  camera_mode: CameraMode;
+  asl: AslStatus;
   sound: SoundStatus;
   engine: Engine;
   /** Active input lock: pauses the camera or microphone worker. */
@@ -221,4 +238,12 @@ export function bridgeSetProximity(baseUrl: string, enabled: boolean): Promise<B
 
 export function bridgeSetRotate(baseUrl: string, deg: 0 | 90 | 180 | 270): Promise<BridgeState> {
   return post<BridgeState>(baseUrl, `/rotate?deg=${deg}`);
+}
+
+/** Switch what the same camera feed is interpreted as. Loads the hand model
+ * on first switch to 'asl', so this can take a moment and can fail (no
+ * mediapipe installed, model download blocked, etc.) -- callers should
+ * expect the promise to reject. */
+export function bridgeSetCameraMode(baseUrl: string, mode: CameraMode): Promise<BridgeState> {
+  return post<BridgeState>(baseUrl, `/camera_mode?value=${mode}`);
 }
