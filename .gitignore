@@ -10,3 +10,4 @@ __pycache__/
 **/.env
 bridge/models/*.pb
 bridge/models/*.onnx
+bridge/wake.json
