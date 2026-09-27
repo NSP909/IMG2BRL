@@ -80,7 +80,7 @@ export function Viewfinder({ detection, scanning, onCapture, live, aslActive, br
         {live && !browserFeedActive ? (
           <img className="vf__video" src={live.streamUrl} alt="Live view from the bridge camera" />
         ) : (
-          <video ref={cam.videoRef} className="vf__video" muted playsInline hidden={!webcam} />
+          <video ref={cam.videoRef} className={`vf__video ${aslActive ? 'vf__video--mirror' : ''}`} muted playsInline hidden={!webcam} />
         )}
         <canvas ref={canvasRef} hidden />
 

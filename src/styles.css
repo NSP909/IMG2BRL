@@ -231,6 +231,12 @@ dl, dd { margin: 0; }
 .vf__frame--live { background: #111; }
 .vf__video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
 .vf__video[hidden] { display: none; }
+/* Selfie-style mirror for self-facing use (Bragi: watching your own hand).
+   Display-only -- the captured/posted frame (canvas drawImage from the same
+   <video>) is unaffected by this CSS transform, so detection still runs on
+   the true, unmirrored frame. Not applied to Rune: it reads real-world text,
+   which would come out backwards if mirrored. */
+.vf__video--mirror { transform: scaleX(-1); }
 
 .vf__corner {
   position: absolute;
