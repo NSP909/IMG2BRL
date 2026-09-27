@@ -60,7 +60,7 @@ export default function App() {
   // Detection → cells → timed stream. The browser is the clock; every cell
   // it shows is also sent to the Pi, so the screen and the finger agree.
   const cells = useMemo(
-    () => encodeText(detection?.label ?? '', { capitalIndicators: settings.capitalIndicators }),
+    () => encodeText(detection?.label ?? '', { capitalIndicators: settings.capitalIndicators, kind: detection?.kind }),
     [detection, settings.capitalIndicators],
   );
   const stream = useCellStream(cells, {
@@ -108,12 +108,21 @@ export default function App() {
     };
   }, [view, bridge.online, queueLen, idle, bridgeNext, hardware.locked]);
 
-  // Precedence: speech that names the wearer interrupts whatever the camera put on the finger.
-  const headIsSpeech = bridge.state?.queue[0]?.kind === 'speech';
+  // Precedence and relevance while something is playing:
+  //  - a higher-precedence item at the head of the queue (speech > text > object) cuts in;
+  //  - an object that has left the view is cut short when anything else is waiting.
+  const PRIO: Record<string, number> = { speech: 0, text: 1, object: 2 };
+  const head = bridge.state?.queue[0];
+  const headPrio = head ? PRIO[head.kind] ?? 3 : null;
+  const playingPrio = detection && detection.source !== 'manual' && detection.source !== 'simulated' ? PRIO[detection.kind] ?? 3 : null;
+  const playingObjectGone =
+    detection?.kind === 'object' && detection.source === 'camera' && bridge.state
+      ? !bridge.state.visible.includes(detection.label.toLowerCase())
+      : false;
   useEffect(() => {
-    if (view !== 'main' || !headIsSpeech || hardware.locked) return;
-    if (stream.playing && detection && detection.source !== 'microphone') stream.stop();
-  }, [view, headIsSpeech, hardware.locked, stream, detection]);
+    if (view !== 'main' || hardware.locked || !stream.playing || playingPrio === null || headPrio === null) return;
+    if (headPrio < playingPrio || (playingObjectGone && queueLen > 0)) stream.stop();
+  }, [view, hardware.locked, stream, playingPrio, headPrio, playingObjectGone, queueLen]);
 
   // Every change of the displayed cell is one frame to the controller.
   const [frames, setFrames] = useState<Frame[]>([]);

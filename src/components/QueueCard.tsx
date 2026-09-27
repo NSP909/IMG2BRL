@@ -19,7 +19,7 @@ export function QueueCard({ bridge, nowPlaying }: Props) {
       <div className="card__head">
         <span className="eyebrow">Queue</span>
         <span className="small muted">
-          {bridge.online ? (sound ? 'name-containing speech only' : `${hasMic ? 'speech › text › objects · ' : ''}${auto ? 'auto' : 'manual'}`) : 'bridge offline'}
+          {bridge.online ? (sound ? 'name-containing speech only' : `${hasMic ? 'speech › text › objects · ' : ''}${auto ? 'auto' : 'manual'}${s?.scene.pruned ? ` · ${s.scene.pruned} pruned` : ''}`) : 'bridge offline'}
         </span>
       </div>
 
@@ -36,7 +36,9 @@ export function QueueCard({ bridge, nowPlaying }: Props) {
             {queue.map((q, i) => (
               <div key={q.id} className="queue__item">
                 <span className="queue__idx mono">{i + 1}</span>
-                <span className={`chip chip--${q.kind}`}>{q.kind === 'speech' && q.via === 'nearby' ? 'nearby' : q.kind}</span>
+                <span className={`chip chip--${q.kind}`} title={q.kind === 'speech' ? 'prefixed with the speech cell ⠿' : q.kind === 'text' ? 'prefixed with the text cell ⠶' : 'no indicator'}>
+                  {q.kind === 'speech' ? '⠿ ' : q.kind === 'text' ? '⠶ ' : ''}{q.kind === 'speech' && q.via === 'nearby' ? 'nearby' : q.kind}
+                </span>
                 <span className="queue__label">{q.label}</span>
                 <span className="mono small muted">{Math.round(q.confidence * 100)}%</span>
               </div>

@@ -15,8 +15,9 @@ HTTP on port 8080 (CORS open, so the visualizer can call it from anywhere):
   POST /alloff                    everything down, stop braille playback
   POST /lock?value=1|0            safety latch: while locked, cell/pulse/on/braille return 423
   POST /wifi?mode=ap|client       host the IMG2BRL hotspot (Pi at 10.42.0.1) or rejoin saved Wi-Fi
-  POST /braille?text=Hello&cell_ms=900&space_ms=500&gap_ms=120&caps=1&loop=0
+  POST /braille?text=Hello&cell_ms=900&space_ms=500&gap_ms=120&caps=1&loop=0&kind=text|speech
                                   play text as braille, one cell at a time, on the Pi's clock
+                                  (kind prefixes the speech/text indicator cell)
   POST /braille/stop
   GET  /encode?text=Hello         the cell sequence for a text (same encoder as the web app)
 
@@ -122,10 +123,10 @@ def glyph(mask):
 
 # ---------------------------------------------------------------- braille player
 class BraillePlayer(threading.Thread):
-    def __init__(self, text, cell_ms, space_ms, gap_ms, caps, loop):
+    def __init__(self, text, cell_ms, space_ms, gap_ms, caps, loop, kind=None):
         super().__init__(daemon=True)
         self.text = text
-        self.cells = encode_text(text, capital_indicators=caps)
+        self.cells = encode_text(text, capital_indicators=caps, kind=kind)
         self.cell_ms, self.space_ms, self.gap_ms, self.loop = cell_ms, space_ms, gap_ms, loop
         self.stop_evt = threading.Event()
         self.index = -1
@@ -182,10 +183,10 @@ def stop_braille():
         log("braille stopped")
 
 
-def start_braille(text, cell_ms, space_ms, gap_ms, caps, loop):
+def start_braille(text, cell_ms, space_ms, gap_ms, caps, loop, kind=None):
     global PLAYER
     stop_braille()
-    p = BraillePlayer(text, cell_ms, space_ms, gap_ms, caps, loop)
+    p = BraillePlayer(text, cell_ms, space_ms, gap_ms, caps, loop, kind)
     with PLAYER_LOCK:
         PLAYER = p
     log(f"braille start {text!r} -> {len(p.cells)} cells {p.status()['preview']}")
@@ -368,7 +369,7 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(200, state())
             if parts[0] == "encode":
                 text = q.get("text", [""])[0]
-                return self._send(200, {"text": text, "cells": encode_text(text, q.get("caps", ["1"])[0] != "0")})
+                return self._send(200, {"text": text, "cells": encode_text(text, q.get("caps", ["1"])[0] != "0", kind=q.get("kind", [None])[0])})
             if parts[0] == "alloff":
                 stop_braille(); all_off(); log("ALL OFF")
                 return self._send(200, state())
@@ -407,7 +408,8 @@ class Handler(BaseHTTPRequestHandler):
                               qint(q, "space_ms", cfg["space_ms"], 50, 5000),
                               qint(q, "gap_ms", cfg["gap_ms"], 0, 2000),
                               q.get("caps", ["1"])[0] != "0",
-                              q.get("loop", ["0"])[0] == "1")
+                              q.get("loop", ["0"])[0] == "1",
+                              q.get("kind", [None])[0])
                 time.sleep(0.05)
                 return self._send(200, state())
             if parts[0] in ("pulse", "on", "off"):

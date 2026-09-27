@@ -23,6 +23,10 @@ PUNCTUATION = {
 }
 CAPITAL_SIGN = [6]
 NUMBER_SIGN = [3, 4, 5, 6]
+# Message-kind indicators (first cell). Unused anywhere else in this encoder:
+# the full cell for speech, the 2-3-5-6 "square" for text. Objects carry none.
+SPEECH_SIGN = [1, 2, 3, 4, 5, 6]
+TEXT_SIGN = [2, 3, 5, 6]
 DIGIT_LETTERS = 'jabcdefghi'   # digit n -> letter at index n
 
 
@@ -50,11 +54,16 @@ def _cell(dots, label, kind, source_index, description):
             "label": label, "kind": kind, "sourceIndex": source_index, "description": description}
 
 
-def encode_text(text, capital_indicators=True):
-    """Text -> ordered list of cells. Unsupported characters are dropped."""
+def encode_text(text, capital_indicators=True, kind=None):
+    """Text -> ordered list of cells. Unsupported characters are dropped.
+    kind: 'speech' or 'text' prefixes the matching indicator cell; anything else adds none."""
     cells = []
     i, n = 0, len(text)
     number_mode = False
+    if n and kind == "speech":
+        cells.append(_cell(SPEECH_SIGN, 'Speech', 'indicator', 0, 'Speech indicator'))
+    elif n and kind == "text":
+        cells.append(_cell(TEXT_SIGN, 'Text', 'indicator', 0, 'Text indicator'))
     while i < n:
         ch = text[i]
         if ch.isascii() and ch.isalpha():

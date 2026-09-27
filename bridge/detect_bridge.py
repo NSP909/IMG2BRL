@@ -2,7 +2,10 @@
 """Recognition bridge: Pi camera + Mac microphone -> one queue -> braille finger.
 
 Precedence on the finger: speech that contains the wearer's name, then text
-seen by the camera, then objects. The queue is kept in that order.
+seen by the camera, then objects. The queue is kept in that order, and it is
+pruned against the current view: objects leave the queue once they leave the
+frame (immediately after a scene change), text once no text has been in view
+for a few seconds. Speech is independent of the camera and never pruned.
 
   camera (Pi, MJPEG tcp 8555) ---> latest frame
   latest frame --every 0.5 s--> YOLO26 (objects, filtered to a short list of venue objects)
@@ -67,6 +70,9 @@ ap.add_argument("--rotate", type=int, choices=[0, 90, 180, 270], default=None,
 ap.add_argument("--proximity", action="store_true", help="start with the nearby-voice pathway ON (default off)")
 ap.add_argument("--proximity-threshold", type=float, default=0.55,
                 help="a person whose box spans this fraction of the frame height counts as 'close'")
+ap.add_argument("--stale-passes", type=int, default=3, help="drop a queued object once it has been out of view this many passes (~1.5 s)")
+ap.add_argument("--stale-text-s", type=float, default=5.0, help="drop queued text once no text has been in view for this long")
+ap.add_argument("--scene-shift", type=float, default=0.28, help="mean frame difference (0-1) that counts as a scene change")
 ap.add_argument("--mode", choices=["auto", "manual"], default="auto")
 ap.add_argument("--stable", type=int, default=2, help="auto: passes an object must persist before queueing")
 ap.add_argument("--cooldown", type=float, default=5, help="auto: minimum seconds before a label that left and came back may queue again")
@@ -162,6 +168,7 @@ STATE = {
     "frame": None, "jpeg": None, "frame_at": 0.0, "camera_ok": False,
     "detections": [], "best": None, "mode": args.mode, "queue": collections.deque(),   # kept sorted: speech, then text, then objects
     "rotate": load_rotate(), "frame_size": None,
+    "visible": [], "scene": {"diff": 0.0, "changed_at": 0.0, "changes": 0, "pruned": 0},
     # Nearby-voice pathway (opt-in, off at every start): when a person is close to the
     # camera, speech is accepted without the name and still takes speech precedence.
     "proximity": {"enabled": bool(args.proximity), "threshold": args.proximity_threshold, "close": False, "ratio": 0.0, "grace_until": 0.0},
@@ -579,7 +586,7 @@ PRIORITY = {"speech": 0, "text": 1, "object": 2}   # what the finger gets first
 def enqueue(det, reason, source="camera"):
     with LOCK:
         STATE["seq"] += 1
-        prefix = "mic" if source == "microphone" else "cam"
+        prefix = {"microphone": "mic", "manual": "man"}.get(source, "cam")
         item = dict(det, id=f"{prefix}-{STATE['seq']}", at=int(time.time() * 1000), source=source,
                     priority=PRIORITY.get(det["kind"], 3))
         item.pop("engine", None)
@@ -635,6 +642,48 @@ def maybe_queue_text(text, conf):
     enqueue({"kind": "text", "label": text, "confidence": conf, "box": box or {"x": 0.15, "y": 0.4, "w": 0.7, "h": 0.2}}, "auto text")
 
 
+LAST_GRAY = {"img": None}
+LAST_TEXT_SEEN = {"at": 0.0}
+
+
+def scene_shift(frame):
+    """Cheap scene-change score: mean absolute difference of a tiny grayscale copy (0-1)."""
+    g = cv2.cvtColor(cv2.resize(frame, (32, 18)), cv2.COLOR_BGR2GRAY).astype(np.float32) / 255.0
+    prev, LAST_GRAY["img"] = LAST_GRAY["img"], g
+    return float(np.abs(g - prev).mean()) if prev is not None else 0.0
+
+
+def prune_queue(visible, text_present, force=False):
+    """Drop queued things that are no longer relevant to what the camera sees.
+
+    Objects: gone once their label has been out of view for --stale-passes (or right
+    away after a scene change). Text: gone once nothing textual has been in view for
+    --stale-text-s. Speech is independent of the camera and is never pruned here.
+    """
+    now = time.time()
+    dropped = []
+    with LOCK:
+        keep = []
+        for item in STATE["queue"]:
+            if item.get("source") != "camera":
+                keep.append(item)            # manual entries and speech are not tied to the view
+                continue
+            if item["kind"] == "object":
+                lbl = item["label"].lower()
+                gone = lbl not in visible and (force or ABSENT.get(lbl, 0) >= args.stale_passes)
+                (dropped if gone else keep).append(item)
+            elif item["kind"] == "text":
+                gone = not text_present and now - LAST_TEXT_SEEN["at"] > args.stale_text_s and (force or True)
+                (dropped if gone else keep).append(item)
+            else:
+                keep.append(item)
+        if dropped:
+            STATE["queue"].clear(); STATE["queue"].extend(keep)
+            STATE["scene"]["pruned"] += len(dropped)
+    for item in dropped:
+        log(f"dropped [{'scene change' if force else 'out of view'}] {item['kind']}: {item['label']!r}")
+
+
 def detect_loop():
     model = load_model()
     load_east()
@@ -676,6 +725,11 @@ def detect_loop():
         if td:
             dets.insert(0, td)
         best = choose_best(dets)
+        shift = scene_shift(frame)
+        changed = shift >= args.scene_shift
+        visible_now = {d["label"].lower() for d in dets if d["kind"] == "object"}
+        if present:
+            LAST_TEXT_SEEN["at"] = time.time()
         # nearby-voice pathway: is someone close? (largest person box vs frame height)
         ratio = max((d["box"]["h"] for d in dets if d["kind"] == "object" and d["label"] == "person"), default=0.0)
         with LOCK:
@@ -688,9 +742,15 @@ def detect_loop():
             if ratio >= prox["threshold"]:
                 prox["grace_until"] = time.time() + 3.0      # stays 'close' briefly after they step back
             prox["close"] = time.time() < prox["grace_until"]
+            STATE["visible"] = sorted(visible_now)
+            sc = STATE["scene"]
+            sc["diff"] = round(shift, 3)
+            if changed:
+                sc["changed_at"] = time.time()
+                sc["changes"] += 1
         # object arrival tracking (text is queued by the reader when it comes back)
         now = time.time()
-        seen = {d["label"].lower() for d in dets if d["kind"] == "object"}
+        seen = visible_now
         for lbl in seen:
             ABSENT[lbl] = 0
             PRESENT.setdefault(lbl, now)
@@ -699,6 +759,10 @@ def detect_loop():
                 ABSENT[lbl] = ABSENT.get(lbl, 0) + 1
                 if ABSENT[lbl] >= ABSENT_PASSES:
                     del PRESENT[lbl]
+        if changed:
+            log(f"scene change (diff {shift:.2f}); re-evaluating the queue")
+            STABLE["label"], STABLE["count"] = None, 0
+        prune_queue(seen, present, force=changed)
         label = best["label"].lower() if best and best["kind"] == "object" else None
         if label == STABLE["label"]:
             STABLE["count"] += 1
@@ -724,7 +788,7 @@ def direct_loop():
             if not st["braille"]["playing"] and not st.get("locked"):
                 item = pop_next()
                 if item:
-                    pi(f"/braille?text={quote(item['label'])}&cell_ms={args.cell_ms}&space_ms={args.space_ms}")
+                    pi(f"/braille?text={quote(item['label'])}&cell_ms={args.cell_ms}&space_ms={args.space_ms}&kind={item['kind']}")
                     log(f"playing on Pi: {item['label']!r}")
         except Exception as e:
             log(f"pi unreachable: {e}")
@@ -748,6 +812,7 @@ def snapshot():
         return {
             "recognizer": STATE["recognizer"], "sound": dict(STATE["sound"]),
             "rotate": STATE["rotate"], "frame_size": STATE["frame_size"],
+            "visible": list(STATE["visible"]), "scene": dict(STATE["scene"]),
             "proximity": {k: v for k, v in STATE["proximity"].items() if k != "grace_until"},
             "camera_ok": STATE["camera_ok"], "frame_age_ms": int((time.time() - STATE["frame_at"]) * 1000) if STATE["frame_at"] else None,
             "detections": STATE["detections"], "best": STATE["best"], "mode": STATE["mode"], "paused": STATE["paused"], "engine": STATE["engine"],
@@ -828,7 +893,7 @@ class Handler(BaseHTTPRequestHandler):
             if not text:
                 return self._json(400, {"error": "text required"})
             return self._json(200, {"item": enqueue({"kind": q.get("kind", ["text"])[0], "label": text, "confidence": 1.0,
-                                                     "box": {"x": 0.14, "y": 0.4, "w": 0.72, "h": 0.2}}, "manual")})
+                                                     "box": {"x": 0.14, "y": 0.4, "w": 0.72, "h": 0.2}}, "manual", source="manual")})
         if u.path == "/clear":
             with LOCK:
                 STATE["queue"].clear()

@@ -75,6 +75,15 @@ const PUNCTUATION: Record<string, Dot[]> = {
 export const CAPITAL_SIGN: Dot[] = [6];
 /** Dots 3-4-5-6 announce that the following a–j cells are the digits 1–0. */
 export const NUMBER_SIGN: Dot[] = [3, 4, 5, 6];
+/**
+ * Message-kind indicators, sent as the first cell so the finger knows what is
+ * coming. Both patterns are unused anywhere else in this encoder:
+ * the full cell (all six dots) for speech, the "square" (2-3-5-6) for text.
+ * Objects carry no indicator.
+ */
+export const SPEECH_SIGN: Dot[] = [1, 2, 3, 4, 5, 6];
+export const TEXT_SIGN: Dot[] = [2, 3, 5, 6];
+export type MessageKind = 'object' | 'text' | 'speech';
 
 /** Digit n is written with the letter at this index once the number sign is active. */
 const DIGIT_LETTERS = 'jabcdefghi';
@@ -125,6 +134,8 @@ export function describeDots(dots: readonly Dot[]): string {
 export interface EncodeOptions {
   /** Emit capital indicators (dot 6) for uppercase letters. Default true. */
   capitalIndicators?: boolean;
+  /** Prefix the message with its kind indicator (speech: full cell, text: 2-3-5-6). */
+  kind?: MessageKind;
 }
 
 /**
@@ -137,6 +148,9 @@ export function encodeText(text: string, opts: EncodeOptions = {}): BrailleCell[
   const cells: BrailleCell[] = [];
   let i = 0;
   let numberMode = false;
+
+  if (text.length > 0 && opts.kind === 'speech') cells.push(indicator('Speech', 'Speech indicator', SPEECH_SIGN, 0));
+  if (text.length > 0 && opts.kind === 'text') cells.push(indicator('Text', 'Text indicator', TEXT_SIGN, 0));
 
   while (i < text.length) {
     const ch = text[i];

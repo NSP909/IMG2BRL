@@ -152,8 +152,24 @@ queues the **full utterance only when it contains the wearer's name or an
 alias**. Rejected speech is never shown, queued, or logged.
 
 **Precedence on the finger: speech that names the wearer › text the camera
-read › objects.** The queue is kept in that order, and a name call
-interrupts a camera message that is already playing.
+read › objects.** The queue is kept in that order, and a higher-precedence
+arrival interrupts a lower one that is already playing (speech cuts into
+anything, text cuts into an object).
+
+**The queue follows the view.** A queued object is dropped once its label
+has been out of view for three passes (~1.5 s), and immediately after a
+scene change (mean frame difference above `--scene-shift`, default 0.28).
+Queued text is dropped once no text has been in view for `--stale-text-s`
+(5 s). An object that leaves the view while it is playing is cut short when
+anything else is waiting. Speech and manual entries are never pruned; they
+are independent of the camera. (A learned re-ranker such as TypeSafe's Jev
+could replace these rules later; the deterministic version needs no API.)
+
+**Indicator cells.** Speech messages start with the full cell ⠿ (dots
+1-2-3-4-5-6) and text messages with the square ⠶ (dots 2-3-5-6); neither
+pattern is used anywhere else in the encoder. Objects carry no indicator.
+Both encoders (`src/lib/braille.ts`, `pi/braille.py`) emit them, and the
+Pi's `/braille` and `/encode` take `kind=speech|text`.
 
 The name is set from the website (the microphone card on the Finger screen
 and in the lab) and saved in `bridge/wake.json`, so it survives restarts.

@@ -103,6 +103,9 @@ export interface BridgeState {
   /** [width, height] of the (rotated) frames, once the camera is up. */
   frame_size: [number, number] | null;
   proximity: Proximity;
+  /** Object labels in view right now (lower-case). */
+  visible: string[];
+  scene: { diff: number; changed_at: number; changes: number; pruned: number };
   recognizer: Recognizer;
   sound: SoundStatus;
   engine: Engine;
