@@ -23,7 +23,7 @@ MODEL_PATH = os.path.join(HERE, "models", "asl_cnn_model.onnx")
 SPACE_MODEL_PATH = os.path.join(HERE, "models", "asl_cnn_model_space.onnx")
 CLASS_NAMES = tuple("abcdefghijklmnopqrstuvwxyz")
 CONFIDENCE_FLOOR = 0.50
-COMMIT_CONFIDENCE = 0.75
+COMMIT_CONFIDENCE = 0.65
 SCORE_WINDOW = 8
 
 CANVAS_SIZE = 192

@@ -181,7 +181,7 @@ class AslRecognizer:
     it has held for a few passes. Letters build up a word; SPACE ends it."""
 
     CLASSIFIERS = ("cnn", "knn", "geometric")
-    CNN_SHOW, CNN_COMMIT = 0.50, 0.75  # confidence to display a letter / to count it
+    CNN_SHOW, CNN_COMMIT = 0.50, 0.65  # confidence to display a letter / to count it
 
     def __init__(self, classifier: str = "cnn", stable_passes: int = 2,
                  cnn_stable_passes: int = 3, k: int = 5):

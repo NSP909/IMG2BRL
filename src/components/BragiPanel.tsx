@@ -120,7 +120,7 @@ export function BragiPanel({ asl, onWord, onClassifier }: Props) {
                       <strong>{prediction.label === 'SPACE' ? '␣' : prediction.label}</strong>
                       <span className="bragi__score-track">
                         <i
-                          className={index === 0 && (asl.classifier !== 'cnn' || prediction.confidence >= 0.75) ? 'is-sure' : ''}
+                          className={index === 0 && (asl.classifier !== 'cnn' || prediction.confidence >= 0.65) ? 'is-sure' : ''}
                           style={{ width: `${Math.round(prediction.confidence * 100)}%` }}
                         />
                       </span>
@@ -141,7 +141,7 @@ export function BragiPanel({ asl, onWord, onClassifier }: Props) {
                   ? 'Fingerspell one letter at a time'
                   : asl.moving
                     ? 'Moving… hold still to add it'
-                    : asl.classifier === 'cnn' && asl.confidence < 0.75
+                    : asl.classifier === 'cnn' && asl.confidence < 0.65
                       ? 'Not sure yet'
                       : holding > 0
                         ? `Adding ${asl.label === 'SPACE' ? 'space' : asl.label}…`
