@@ -10,8 +10,8 @@ export interface BridgeDetection {
   label: string;
   confidence: number;
   box: Box;
-  /** Which engine produced it: yolo (default), tesseract, or the vision model. */
-  engine?: 'tesseract' | 'vlm';
+  /** Who produced it: yolo (default), the text gate ('east', not a candidate), or a reader. */
+  engine?: 'east' | 'anthropic' | 'openai' | 'tesseract' | 'vlm';
 }
 
 export interface QueueItem extends BridgeDetection {
@@ -23,37 +23,50 @@ export interface QueueItem extends BridgeDetection {
 export interface BridgeStats {
   fps: number;
   infer_ms: number;
-  ocr_ms: number;
+  gate_ms: number;
   model: string;
   device: string;
   passes: number;
 }
 
-export type Engine = 'tesseract' | 'vlm' | 'both' | 'none';
+export type Engine = 'vlm' | 'tesseract' | 'none';
 
-export interface VlmResult {
+/** The EAST text-presence gate. */
+export interface TextGate {
+  present: boolean;
+  cells: number;
+  score: number;
+  box: Box | null;
+  since: number;
+}
+
+/** The last text read (Claude, or Tesseract offline). */
+export interface ReadResult {
   available: boolean;
-  /** 'anthropic' (Claude) or 'openai'. */
   provider: 'anthropic' | 'openai' | null;
   model: string | null;
-  kind: 'text' | 'object' | null;
-  label: string;
+  engine: 'anthropic' | 'openai' | 'tesseract' | null;
   text: string;
-  object: string;
   confidence: number;
   latency_ms: number;
   at: number;
+  requested_at: number;
+  passes: number;
   raw: string;
   error: string | null;
-  passes: number;
+  /** Milliseconds until the next cloud read is allowed. */
+  gap_left_ms: number;
+  read_gap_ms: number;
 }
 
 export interface BridgeState {
   engine: Engine;
-  /** Camera lock: no detection, no vision calls, no queueing while true. */
+  /** Camera lock: no detection, no reads, no queueing while true. */
   paused: boolean;
-  vlm: VlmResult;
-  tesseract: BridgeDetection[];
+  text: TextGate;
+  read: ReadResult;
+  /** Object labels the detector is allowed to report. */
+  classes: string[];
   camera_ok: boolean;
   frame_age_ms: number | null;
   detections: BridgeDetection[];

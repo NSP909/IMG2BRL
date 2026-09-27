@@ -11,9 +11,8 @@ interface Props {
 }
 
 const ENGINES: { value: Engine; label: string }[] = [
-  { value: 'tesseract', label: 'Tesseract' },
   { value: 'vlm', label: 'Claude' },
-  { value: 'both', label: 'Both' },
+  { value: 'tesseract', label: 'Tesseract' },
   { value: 'none', label: 'Off' },
 ];
 
@@ -27,8 +26,10 @@ export function LabView({ bridge, onSend, nowPlaying }: Props) {
   const live: LiveFeed | null =
     bridge.online && s ? { streamUrl: bridge.streamUrl, cameraOk: s.camera_ok, detections: s.detections, best: s.best, stats: s.stats } : null;
   const yolo = (s?.detections ?? []).filter((d) => !d.engine).sort((a, b) => b.confidence - a.confidence);
-  const vlm = s?.vlm;
+  const read = s?.read;
+  const gate = s?.text;
   const best = s?.best ?? null;
+  const cloud = read?.provider !== null && read?.model !== null;
 
   return (
     <main className="layout lab">
@@ -67,6 +68,7 @@ export function LabView({ bridge, onSend, nowPlaying }: Props) {
               {s ? `${s.stats.model} · ${s.stats.device} · ${s.stats.infer_ms} ms · ${s.stats.fps} fps` : 'offline'}
             </span>
           </div>
+          {s && <p className="small muted">Only these are reported: {s.classes.join(', ')}.</p>}
           {yolo.length ? (
             <div className="lab__list">
               {yolo.map((d, i) => (
@@ -78,19 +80,19 @@ export function LabView({ bridge, onSend, nowPlaying }: Props) {
           )}
         </section>
 
-        <section className="card" aria-label="Text and classification">
+        <section className="card" aria-label="Text reading">
           <div className="card__head">
-            <span className="eyebrow">Text & classification</span>
-            <div className="tabs" role="radiogroup" aria-label="Engine">
+            <span className="eyebrow">Text · gate then read</span>
+            <div className="tabs" role="radiogroup" aria-label="Reader">
               {ENGINES.map((e) => (
                 <button
                   key={e.value}
                   type="button"
                   className={`tab ${s?.engine === e.value ? 'is-active' : ''}`}
                   onClick={() => bridge.setEngine(e.value)}
-                  disabled={!bridge.online || (e.value !== 'tesseract' && e.value !== 'none' && vlm ? !vlm.available : false)}
+                  disabled={!bridge.online || (e.value === 'vlm' && !cloud)}
                 >
-                  {e.value === 'vlm' ? providerName(vlm?.provider) : e.label}
+                  {e.value === 'vlm' ? providerName(read?.provider) : e.label}
                 </button>
               ))}
             </div>
@@ -98,48 +100,40 @@ export function LabView({ bridge, onSend, nowPlaying }: Props) {
 
           <div className="lab__engine">
             <div className="field__row">
-              <span className="muted">{providerName(vlm?.provider)} vision</span>
+              <span className="muted">Text present?</span>
               <span className="mono small">
-                {vlm?.available ? `${vlm.model ?? '…'} · ${vlm.latency_ms} ms · ${vlm.passes} passes` : vlm?.error ? `unavailable: ${vlm.error}` : 'no key in bridge/.env'}
+                {gate ? (gate.present ? `yes · ${gate.cells} cells · ${Math.round(gate.score * 100)}%` : `no · ${Math.round(gate.score * 100)}%`) : '—'}
+                {s ? ` · EAST ${s.stats.gate_ms} ms` : ''}
               </span>
             </div>
-            {vlm?.available && (
-              <>
-                <div className="detect__row">
-                  {vlm.label ? (
-                    <>
-                      <span className={`chip chip--${vlm.kind ?? 'object'}`}>{vlm.kind}</span>
-                      <span className="detect__label">{vlm.label}</span>
-                      <span className="mono small muted">{Math.round(vlm.confidence * 100)}%</span>
-                      <button type="button" className="btn lab__send" onClick={() => onSend(vlm.label, vlm.kind ?? 'text')}>Send</button>
-                    </>
-                  ) : (
-                    <span className="muted small">{vlm.error ?? 'waiting for the first answer…'}</span>
-                  )}
-                </div>
-                {(vlm.text || vlm.object) && (
-                  <div className="small muted">text: <span className="mono">{vlm.text || '—'}</span> · object: <span className="mono">{vlm.object || '—'}</span></div>
-                )}
-                <div className="field__row">
-                  <button type="button" className="btn" onClick={bridge.analyze} disabled={!bridge.online}>Analyze now</button>
-                  {vlm.raw && <span className="mono small muted lab__raw" title={vlm.raw}>{vlm.raw.slice(0, 90)}</span>}
-                </div>
-              </>
-            )}
-
-            <div className="field__row" style={{ marginTop: 8 }}>
-              <span className="muted">Tesseract</span>
-              <span className="mono small">{s ? `${s.stats.ocr_ms} ms` : ''}</span>
+            <div className="field__row">
+              <span className="muted">{read?.engine === 'tesseract' ? 'Tesseract' : providerName(read?.provider)} read</span>
+              <span className="mono small">
+                {read
+                  ? `${read.model ?? 'offline'} · ${read.passes} reads · ${read.latency_ms} ms${read.gap_left_ms > 0 ? ` · next in ${(read.gap_left_ms / 1000).toFixed(1)} s` : ' · ready'}`
+                  : '—'}
+              </span>
             </div>
-            {s?.tesseract.length ? (
-              <div className="lab__list">
-                {s.tesseract.map((d, i) => (
-                  <DetRow key={`${d.label}-${i}`} d={d} best={best === d} onSend={onSend} />
-                ))}
-              </div>
-            ) : (
-              <p className="muted small">No confident text lines from Tesseract.</p>
-            )}
+            <div className="detect__row">
+              {read?.text ? (
+                <>
+                  <span className="chip chip--text">text</span>
+                  <span className="detect__label">{read.text}</span>
+                  <span className="mono small muted">{Math.round(read.confidence * 100)}%</span>
+                  <button type="button" className="btn lab__send" onClick={() => onSend(read.text, 'text')}>Send</button>
+                </>
+              ) : (
+                <span className="muted small">{read?.error ?? (gate?.present ? 'text in view, waiting for the read…' : 'no text read yet')}</span>
+              )}
+            </div>
+            <div className="field__row">
+              <button type="button" className="btn" onClick={bridge.analyze} disabled={!bridge.online}>Read now</button>
+              {read?.raw && <span className="mono small muted lab__raw" title={read.raw}>{read.raw.slice(0, 90)}</span>}
+            </div>
+            <p className="small muted">
+              Flow: EAST says whether text is in view (every pass, local). When it is, and at least {read ? (read.read_gap_ms / 1000).toFixed(0) : '5'} s passed since the last read,
+              one request goes to {providerName(read?.provider)} to transcribe it. Text always beats objects.
+            </p>
           </div>
         </section>
       </div>

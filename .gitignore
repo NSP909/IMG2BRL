@@ -7,3 +7,5 @@ __pycache__/
 *.pyc
 .env
 **/.env
+bridge/models/*.pb
+bridge/models/*.onnx

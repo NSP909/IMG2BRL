@@ -73,26 +73,40 @@ Two seams are designed for replacement:
 ## Detection in: Pi camera → laptop → queue → finger
 
 The Pi's camera module streams MJPEG (`camera-stream.service`, tcp 8555).
-A bridge process on the laptop pulls that stream, runs YOLO26 for objects,
-reads text and classifies the scene with Claude (`claude-opus-5`, vision,
-structured JSON, low effort) with Tesseract as the offline fallback, and
-keeps a queue of what to send to the finger. The web app shows the live
-annotated feed, pops the queue one message at a time, plays it, and drives
-the solenoids.
+A bridge process on the laptop pulls that stream and, twice a second:
+
+1. **Objects · YOLO26** (`pi/models/yolo26n-seg.pt`, ~40 ms on the GPU),
+   filtered to a short list of things you meet at a venue: person, phone,
+   laptop, bottle, chair, couch, table, cup, backpack, bag, book, keyboard,
+   mouse, screen, clock, scissors, plant, bench (`--classes` to change).
+2. **Text gate · EAST** (`bridge/models/frozen_east_text_detection.pb`,
+   ~60 ms, local): does this frame contain text, and where?
+3. **Text read · Claude** (`claude-opus-5`, structured JSON, low effort): only
+   when the gate says text is in view for two passes, and at least **5 s**
+   after the previous request (`--read-gap`). The crop around the text is
+   sent with `bridge/prompt.txt`. Tesseract is the offline reader
+   (`--engine tesseract`), useful without a key.
+
+**Text always beats objects.** The best candidate goes to a bounded queue:
+in auto mode a read text is queued when it comes back (once per distinct
+text), and an object once it has been in view for two passes and only when
+no text is showing; in manual mode only the capture button queues. The web
+app pops the queue one message at a time, plays it, and drives the pins.
 
 ```bash
-python3 pi/models/fetch_models.py yolo26n-seg.pt   # once: download the weights
-brew install tesseract && pip install anthropic   # once: OCR fallback + Claude SDK
+python3 pi/models/fetch_models.py yolo26n-seg.pt   # once: object weights
+curl -L -o bridge/models/frozen_east_text_detection.pb \
+  https://github.com/oyyd/frozen_east_text_detection.pb/raw/master/frozen_east_text_detection.pb   # once: text gate
+brew install tesseract                            # once: offline reader
 echo ANTHROPIC_API_KEY=sk-ant-... > bridge/.env    # once: never committed (.gitignore)
 python3 bridge/detect_bridge.py                   # laptop side, keep running
 npm run dev                                       # web app on http://127.0.0.1:5173
 ```
 
-The prompt sent with each frame is `bridge/prompt.txt`; edit it freely. An
-`OPENAI_API_KEY` in `bridge/.env` selects OpenAI instead (`--vlm-provider`).
-Engines can be switched live from the **Camera lab** screen (top bar), which
-shows the feed, every YOLO detection, the Claude answer with latency, the
-Tesseract lines, and lets you send any of them to the finger.
+The **Camera lab** screen (top bar) shows the feed with every box, the
+object list, the text gate's verdict, the countdown to the next Claude read,
+the last read text with its latency, an engine switch, a "Read now" button,
+and Send buttons to play any of them on the finger.
 
 ### Safety controls (top bar)
 
@@ -115,8 +129,9 @@ block the command-line tools.
 
 Bridge API on `:8765`: `GET /state`, `GET /frame.jpg`, `GET /stream.mjpg`,
 `POST /next`, `POST /capture`, `POST /queue?text=`, `POST /clear`,
-`POST /mode?value=auto|manual`, `POST /engine?value=tesseract|vlm|both|none`,
-`POST /analyze`. The dev server forwards `/bridge/*` to it.
+`POST /mode?value=auto|manual`, `POST /engine?value=vlm|tesseract|none`,
+`POST /analyze` (read now), `POST /pause?value=1|0`. The dev server forwards
+`/bridge/*` to it.
 
 The Pi camera has one consumer at a time: stop the bridge before using
 `tools/pi_camera_view.sh`, and vice versa.
@@ -138,8 +153,9 @@ pi/
   setup/                 first-boot config for a fresh Raspberry Pi OS card (USB gadget networking, SSH, user, Wi-Fi)
   models/                detection weights (not committed) + fetch_models.py to download them; see pi/models/README.md
 bridge/
-  detect_bridge.py       laptop: Pi camera -> YOLO26 + Claude vision (Tesseract fallback) -> queue -> web app / Pi
-  prompt.txt             the prompt sent to Claude with each frame
+  detect_bridge.py       laptop: Pi camera -> YOLO26 objects + EAST text gate -> Claude reads text -> queue -> web app / Pi
+  prompt.txt             the transcription prompt sent to Claude
+  models/                EAST weights (not committed)
 tools/
   solenoid.sh            fire dots / play text / open the panel from a Mac
   pi_camera_view.sh      live view from the Pi camera (rpicam-vid → ffplay)

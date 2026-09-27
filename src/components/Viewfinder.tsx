@@ -47,11 +47,11 @@ export function Viewfinder({ detection, scanning, onCapture, live }: Props) {
               return (
                 <div
                   key={`${d.kind}-${d.label}-${i}`}
-                  className={`vf__box vf__box--${d.kind} ${isBest ? '' : 'vf__box--dim'}`}
+                  className={`vf__box vf__box--${d.kind} ${isBest ? '' : 'vf__box--dim'} ${d.engine === 'east' ? 'vf__box--gate' : ''}`}
                   style={{ left: `${d.box.x * 100}%`, top: `${d.box.y * 100}%`, width: `${d.box.w * 100}%`, height: `${d.box.h * 100}%` }}
                 >
                   <span className="vf__tag">
-                    {d.kind === 'text' ? `“${d.label}”` : d.label} · {Math.round(d.confidence * 100)}%
+                    {d.engine === 'east' ? 'text?' : d.kind === 'text' ? `“${d.label}”` : d.label} · {Math.round(d.confidence * 100)}%
                   </span>
                 </div>
               );
@@ -71,7 +71,7 @@ export function Viewfinder({ detection, scanning, onCapture, live }: Props) {
         <div className="vf__hint">
           {live
             ? live.cameraOk
-              ? `Pi camera · ${live.stats.model} on ${live.stats.device} · ${live.stats.infer_ms} ms${live.stats.ocr_ms ? ` · OCR ${live.stats.ocr_ms} ms` : ''}`
+              ? `Pi camera · ${live.stats.model} on ${live.stats.device} · ${live.stats.infer_ms} ms · text gate ${live.stats.gate_ms} ms`
               : 'Bridge running · waiting for the Pi camera'
             : scanning
               ? 'Looking for objects and text…'

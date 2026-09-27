@@ -610,3 +610,5 @@ input[type='range'] { width: 100%; accent-color: var(--ink); margin: 0; }
 .btn--latch-amber.is-on { background: var(--warn); border-color: var(--warn); color: #fff; }
 .btn--latch-amber.is-on:hover { background: #8f6320; border-color: #8f6320; }
 .pill__dot--locked { background: #b3261e; }
+
+.vf__frame--live .vf__box--gate { border-style: dotted; opacity: 0.7; }
