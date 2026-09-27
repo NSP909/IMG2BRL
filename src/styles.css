@@ -181,6 +181,31 @@ dl, dd { margin: 0; }
 .chip--speech { background: #315e52; color: #fff; border-color: #315e52; }
 
 .bragi__history { display: flex; flex-wrap: wrap; gap: 8px; }
+.bragi__hero {
+  background: var(--bg-2);
+  border: 1px solid var(--line-2);
+  border-radius: 18px;
+  padding: 36px 20px;
+  min-height: 180px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+}
+.bragi__char {
+  font-size: 128px;
+  line-height: 1;
+  font-weight: 300;
+  letter-spacing: -0.02em;
+  animation: pop 0.28s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.bragi__char--idle { font-size: 20px; font-weight: 500; color: var(--ink-3); animation: none; }
+.bragi__transcript {
+  font-size: 30px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  overflow-wrap: anywhere;
+}
 
 .btn {
   display: inline-flex;

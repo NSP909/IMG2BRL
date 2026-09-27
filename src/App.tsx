@@ -9,6 +9,7 @@ import { DevView } from './components/DevView';
 import { Viewfinder, type LiveFeed } from './components/Viewfinder';
 import { bridgeSendAslFrame, bridgeSendCameraFrame, type AslStatus } from './lib/bridge';
 import { BragiPanel } from './components/BragiPanel';
+import { BragiHistoryCard } from './components/BragiHistoryCard';
 import { DetectionCard } from './components/DetectionCard';
 import { TextReadCard } from './components/TextReadCard';
 import { QueueCard } from './components/QueueCard';
@@ -339,7 +340,8 @@ export default function App() {
 
         {aslMode ? (
           <div className="col" aria-label="Output">
-            <BragiPanel asl={bridge.state?.asl ?? DEFAULT_ASL} history={aslHistory} onClear={clearAslHistory} />
+            <BragiPanel asl={bridge.state?.asl ?? DEFAULT_ASL} />
+            <BragiHistoryCard history={aslHistory} onClear={clearAslHistory} />
           </div>
         ) : (
           <div className="col" aria-label="Output">
