@@ -83,9 +83,9 @@ export interface AslStatus {
   word_letters: string[];
   /** Words decoded and spoken this session, oldest first. */
   words: AslWord[];
-  /** A finished word is being sent to Jev right now. */
+  /** A finished word is being decoded right now. */
   decoding: boolean;
-  /** A Jev (TypeSafe) key is configured; without one, words fall back to the local dictionary. */
+  /** Unused: words are decoded locally. Kept for older bridges. */
   jev: boolean;
   /** The CNN's SPACE output is being retrained from the recorded Space samples. */
   cnn_training: boolean;
@@ -110,8 +110,8 @@ export type AslSampleSet = 'laptop' | 'pi' | 'both';
 export interface AslWord {
   raw: string;
   word: string;
-  /** Who picked the word: Jev, the local dictionary (Jev unreachable), or nobody (raw letters). */
-  source: 'jev' | 'local' | 'raw';
+  /** Who picked the word: the local dictionary, or nobody (raw letters). */
+  source: 'local' | 'raw';
   confidence: number;
   candidates: string[];
   ms: number;

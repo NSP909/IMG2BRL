@@ -172,7 +172,7 @@ export function BragiPanel({ asl, onWord, onClassifier }: Props) {
           </div>
 
           <p className="small muted">
-            Each letter clicks softly as it lands. The space sign sends the whole word to {asl.jev ? 'Jev' : 'the dictionary'}, which works out what you meant from the letters and the sentence so far, and it's spoken aloud.
+            Each letter clicks softly as it lands. The space sign sends the whole word to the dictionary, which works out what you meant from the letters and the sentence so far, and it's spoken aloud.
           </p>
         </>
       )}

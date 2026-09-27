@@ -6,7 +6,7 @@ interface Props {
   onReset(): void;
 }
 
-const SOURCE: Record<AslWord['source'], string> = { jev: 'Jev', local: 'dictionary', raw: 'as signed' };
+const SOURCE: Record<AslWord['source'], string> = { local: 'dictionary', raw: 'as signed' };
 
 /** The sentence so far, big enough to read at a glance, and how each word got there. */
 export function BragiHistoryCard({ words, decoding, onReset }: Props) {
@@ -32,7 +32,7 @@ export function BragiHistoryCard({ words, decoding, onReset }: Props) {
                 <span className="muted">→</span>
                 <b>{w.word}</b>
                 <span className="small muted">
-                  {SOURCE[w.source]}{w.source === 'jev' ? ` ${Math.round(w.confidence * 100)}%` : ''} · {w.ms} ms
+                  {SOURCE[w.source]} · {w.ms} ms
                 </span>
               </li>
             ))}

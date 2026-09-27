@@ -36,7 +36,7 @@ HTTP on :8765 (CORS open):
   POST /asl_record?letter=A&count=60           record Bragi samples (a letter or SPACE) from the live feed into that camera's set
   POST /asl_record_cancel · /asl_record_clear[?letter=A] · /asl_sample_set?value=laptop|pi|both
   POST /asl_train_space                        retrain the CNN's SPACE output from the recorded Space samples (~40 s)
-  POST /asl_word?action=finish|backspace|clear|reset   the word being spelled (finish = decode with Jev and speak it)
+  POST /asl_word?action=finish|backspace|clear|reset   the word being spelled (finish = decode the word and speak it)
   POST /asl_classifier?value=cnn|knn|geometric  switch Bragi's letter model live (the skeleton CNN is the default)
   POST /camera_source?value=pi|webcam         switch between the Pi's camera and this laptop's webcam (ignored if --camera fixed it)
 
@@ -213,8 +213,8 @@ LOCK = threading.Lock()
 SOUND_SERVICE = None
 ASL = asl_mode.AslRecognizer(classifier=args.asl_classifier, stable_passes=args.asl_stable,
                              cnn_stable_passes=args.asl_cnn_stable)
-# Fingerspelled letters -> the intended word, picked by Jev (TypeSafe). See asl_words.py.
-DECODER = asl_words.WordDecoder(load_env_key("TYPESAFE_API_KEY"))
+# Fingerspelled letters -> the intended word: weighted edit distance over a word list. See asl_words.py.
+DECODER = asl_words.WordDecoder()
 STATE = {
     "frame": None, "jpeg": None, "frame_at": 0.0, "camera_ok": False, "browser_frame_at": 0.0,
     # Last frame from this process's own capture (the Pi stream), as opposed to
@@ -242,7 +242,7 @@ STATE = {
             "stable_count": 0, "stable_needed": ASL.stable_needed, "last_letter": None, "error": None,
             "cnn_training": False, "cnn_train_result": None,
             "confidence": 0.0, "moving": False, "hand": None, "skeleton_image": None, "predictions": [],
-            "word_letters": [], "words": [], "decoding": False, "jev": bool(DECODER.api_key),
+            "word_letters": [], "words": [], "decoding": False, "jev": False,
             "record_into": "pi", "laptop_counts": {},
             "hand_visible": False, "recording": None, "record_progress": 0, "record_target": 0,
             "sample_set": "laptop", "pi_counts": {}},
@@ -894,8 +894,8 @@ def tick():
 
 
 def decode_and_speak(letters):
-    """Letters -> the intended word (Jev picks from local candidates), then say it.
-    Runs on its own thread so a ~0.5 s network call never stalls recognition."""
+    """Letters -> the intended word (local weighted edit distance), then say it.
+    Runs on its own thread so decoding never stalls recognition."""
     with LOCK:
         STATE["asl"]["decoding"] = True
         previous = [w["word"] for w in STATE["asl"]["words"]]
