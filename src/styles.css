@@ -637,8 +637,10 @@ input[type='range'] { width: 100%; accent-color: var(--ink); margin: 0; }
 @media (max-width: 560px) { .sound__name { grid-template-columns: 1fr; } }
 
 /* ---------------- portrait camera + nearby voice ---------------- */
-.vf__frame--portrait { max-height: 72vh; margin: 0 auto; width: auto; }
-.vf__frame--portrait .vf__video { object-fit: contain; background: #111; }
+/* Portrait frames: a definite height lets aspect-ratio derive the width, so the box
+   cannot collapse to zero when centred with auto margins. */
+.vf__frame--portrait { height: min(72vh, 760px); width: auto; max-width: 100%; margin: 0 auto; }
+.vf__frame--portrait .vf__video { object-fit: cover; background: #111; }
 .nearby { display: flex; flex-direction: column; gap: 6px; padding-top: 10px; border-top: 1px solid var(--line-2); }
 .nearby .switch { align-items: flex-start; }
 .nearby.is-on { border-radius: 10px; background: #fff7ea; padding: 10px; margin-top: 4px; border: 1px solid #ecd9b3; }
