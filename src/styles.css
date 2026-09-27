@@ -120,6 +120,12 @@ dl, dd { margin: 0; }
   display: grid;
   grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
   gap: 16px;
+  /* Without this, grid stretches both columns to equal height, and
+     CellHero's flex:1 (useful within its own column) then fills that
+     stretch with empty space -- visible as soon as the Input column has
+     more cards than the Output column (e.g. the mic panel added a 5th
+     card). Each column should only be as tall as its own content. */
+  align-items: start;
 }
 .col { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
 .bottom {
