@@ -56,3 +56,11 @@ export const SendIcon = () => (
     <path d="M2.5 8h10M9 4.5 12.5 8 9 11.5" />
   </svg>
 );
+
+export function StopIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden>
+      <rect x="6" y="6" width="12" height="12" rx="2" />
+    </svg>
+  );
+}

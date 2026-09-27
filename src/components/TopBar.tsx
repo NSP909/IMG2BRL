@@ -1,4 +1,7 @@
+import { StopIcon } from './Icons';
+
 export type Status = 'idle' | 'scanning' | 'streaming' | 'paused' | 'complete';
+export type View = 'main' | 'lab';
 
 interface Props {
   status: Status;
@@ -7,6 +10,10 @@ interface Props {
   /** True when cells are being driven onto the real solenoids. */
   live: boolean;
   host: string;
+  view: View;
+  onView(view: View): void;
+  /** Stop playback, drop the pins, clear the queue. */
+  onStop(): void;
 }
 
 const STATUS_TEXT: Record<Status, string> = {
@@ -17,7 +24,7 @@ const STATUS_TEXT: Record<Status, string> = {
   complete: 'Message complete',
 };
 
-export function TopBar({ status, index, total, live, host }: Props) {
+export function TopBar({ status, index, total, live, host, view, onView, onStop }: Props) {
   const showCount = status === 'streaming' || status === 'paused';
   return (
     <header className="topbar">
@@ -42,11 +49,18 @@ export function TopBar({ status, index, total, live, host }: Props) {
       </div>
 
       <div className="topbar__right">
+        <nav className="tabs" aria-label="Screens">
+          <button type="button" className={`tab ${view === 'main' ? 'is-active' : ''}`} onClick={() => onView('main')}>Finger</button>
+          <button type="button" className={`tab ${view === 'lab' ? 'is-active' : ''}`} onClick={() => onView('lab')}>Camera lab</button>
+        </nav>
         <span className="pill" title={live ? `Solenoid cell on the Pi at ${host}` : 'The Pi is not driving pins right now'}>
           <span className={`pill__dot ${live ? 'pill__dot--live' : 'pill__dot--sim'}`} />
           {live ? 'Live hardware' : 'Simulated hardware'}
         </span>
-        <span className="pill mono">3 × 2 cell · 6 pins</span>
+        <button type="button" className="btn btn--stop" onClick={onStop} title="Stop playback, drop all pins, clear the queue">
+          <StopIcon />
+          Stop
+        </button>
       </div>
     </header>
   );

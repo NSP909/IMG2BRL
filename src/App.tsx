@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { dotsToMask, encodeText } from './lib/braille';
-import { SAMPLES, cameraDetection, makeDetection, manualDetection, type Detection } from './lib/detections';
+import { SAMPLES, cameraDetection, makeDetection, manualDetection, type Detection, type DetectionKind } from './lib/detections';
 import { useCellStream } from './hooks/useCellStream';
 import { useHardware } from './hooks/useHardware';
 import { useBridge } from './hooks/useBridge';
-import { TopBar, type Status } from './components/TopBar';
+import { TopBar, type Status, type View } from './components/TopBar';
+import { LabView } from './components/LabView';
 import { Viewfinder, type LiveFeed } from './components/Viewfinder';
 import { DetectionCard } from './components/DetectionCard';
 import { QueueCard } from './components/QueueCard';
@@ -42,6 +43,18 @@ export default function App() {
   const hardware = useHardware();
   // The camera pipeline: Pi camera -> YOLO + OCR on the laptop -> queue.
   const bridge = useBridge();
+
+  // Two screens: the finger demo, and a lab for testing the camera models alone (#lab).
+  const [view, setViewState] = useState<View>(() => (window.location.hash === '#lab' ? 'lab' : 'main'));
+  const setView = useCallback((v: View) => {
+    window.location.hash = v === 'lab' ? '#lab' : '';
+    setViewState(v);
+  }, []);
+  useEffect(() => {
+    const onHash = () => setViewState(window.location.hash === '#lab' ? 'lab' : 'main');
+    window.addEventListener('hashchange', onHash);
+    return () => window.removeEventListener('hashchange', onHash);
+  }, []);
 
   // Detection → cells → timed stream. The browser is the clock; every cell
   // it shows is also sent to the Pi, so the screen and the finger agree.
@@ -82,7 +95,7 @@ export default function App() {
   const queueLen = bridge.state?.queue.length ?? 0;
   const idle = !scanning && !stream.playing && (stream.total === 0 || stream.finished || stream.index < 0);
   useEffect(() => {
-    if (!bridge.online || queueLen === 0 || !idle) return;
+    if (view !== 'main' || !bridge.online || queueLen === 0 || !idle) return;
     let cancelled = false;
     const timer = window.setTimeout(async () => {
       const item = await bridgeNext();
@@ -92,7 +105,7 @@ export default function App() {
       cancelled = true;
       window.clearTimeout(timer);
     };
-  }, [bridge.online, queueLen, idle, bridgeNext]);
+  }, [view, bridge.online, queueLen, idle, bridgeNext]);
 
   // Every change of the displayed cell is one frame to the controller.
   const [frames, setFrames] = useState<Frame[]>([]);
@@ -122,6 +135,21 @@ export default function App() {
     if (!stream.playing) allOff();
   }, [stream.playing, allOff]);
 
+  // Stop everything: playback, pins, queue, and any scan in progress.
+  const { clear: bridgeClear } = bridge;
+  const stop = useCallback(() => {
+    if (scanTimer.current) window.clearTimeout(scanTimer.current);
+    setScanning(false);
+    stream.stop();
+    allOff();
+    bridgeClear();
+  }, [stream, allOff, bridgeClear]);
+
+  // Play a label on the finger right away (used by the lab screen).
+  const sendNow = useCallback((label: string, kind: DetectionKind) => {
+    setDetection(cameraDetection({ id: `lab-${Date.now()}`, at: Date.now(), kind, label, confidence: 1, box: { x: 0.14, y: 0.4, w: 0.72, h: 0.2 } }));
+  }, []);
+
   const status: Status = scanning
     ? 'scanning'
     : stream.playing
@@ -146,8 +174,11 @@ export default function App() {
 
   return (
     <div className="app">
-      <TopBar status={status} index={stream.index} total={stream.total} live={hardware.live} host={hardware.host} />
+      <TopBar status={status} index={stream.index} total={stream.total} live={hardware.live} host={hardware.host} view={view} onView={setView} onStop={stop} />
 
+      {view === 'lab' ? (
+        <LabView bridge={bridge} onSend={sendNow} nowPlaying={stream.index >= 0 && !stream.finished ? detection.label : null} />
+      ) : (
       <main className="layout">
         <div className="col" aria-label="Input">
           <Viewfinder detection={scanning ? null : detection} scanning={scanning} onCapture={capture} live={liveFeed} />
@@ -166,6 +197,7 @@ export default function App() {
           <SettingsCard settings={settings} onChange={setSettings} />
         </div>
       </main>
+      )}
 
       <footer className="foot small muted">
         Uncontracted braille, one 3 × 2 cell at a time. Pin numbering follows the standard cell: 1–3 down the left column, 4–6 down the right.

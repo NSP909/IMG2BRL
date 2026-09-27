@@ -5,3 +5,5 @@ dist
 pi/models/*.pt
 __pycache__/
 *.pyc
+.env
+**/.env

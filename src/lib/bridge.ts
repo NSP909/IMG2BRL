@@ -10,6 +10,8 @@ export interface BridgeDetection {
   label: string;
   confidence: number;
   box: Box;
+  /** Which engine produced it: yolo (default), tesseract, or the vision model. */
+  engine?: 'tesseract' | 'vlm';
 }
 
 export interface QueueItem extends BridgeDetection {
@@ -27,7 +29,29 @@ export interface BridgeStats {
   passes: number;
 }
 
+export type Engine = 'tesseract' | 'vlm' | 'both' | 'none';
+
+export interface VlmResult {
+  available: boolean;
+  /** 'anthropic' (Claude) or 'openai'. */
+  provider: 'anthropic' | 'openai' | null;
+  model: string | null;
+  kind: 'text' | 'object' | null;
+  label: string;
+  text: string;
+  object: string;
+  confidence: number;
+  latency_ms: number;
+  at: number;
+  raw: string;
+  error: string | null;
+  passes: number;
+}
+
 export interface BridgeState {
+  engine: Engine;
+  vlm: VlmResult;
+  tesseract: BridgeDetection[];
   camera_ok: boolean;
   frame_age_ms: number | null;
   detections: BridgeDetection[];
@@ -102,4 +126,13 @@ export function bridgeClear(baseUrl: string): Promise<BridgeState> {
 
 export function bridgeQueueText(baseUrl: string, text: string): Promise<{ item: QueueItem }> {
   return post<{ item: QueueItem }>(baseUrl, `/queue?text=${encodeURIComponent(text)}`);
+}
+
+export function bridgeSetEngine(baseUrl: string, engine: Engine): Promise<BridgeState> {
+  return post<BridgeState>(baseUrl, `/engine?value=${engine}`);
+}
+
+/** Ask for one OpenAI pass right now. */
+export function bridgeAnalyze(baseUrl: string): Promise<{ ok: boolean }> {
+  return post<{ ok: boolean }>(baseUrl, '/analyze');
 }

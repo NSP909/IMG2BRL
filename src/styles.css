@@ -583,3 +583,21 @@ input[type='range'] { width: 100%; accent-color: var(--ink); margin: 0; }
 .queue__label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .queue__bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding-top: 8px; border-top: 1px solid var(--line-2); }
 .queue__bar .btn { height: 32px; padding: 0 12px; font-size: 13px; }
+
+/* ---------------- top bar: screens + stop ---------------- */
+.tabs { display: inline-flex; border: 1px solid var(--line); border-radius: 999px; padding: 3px; background: var(--surface); }
+.tab { border: 0; background: transparent; color: var(--ink-2); font: inherit; font-size: 13px; padding: 0 12px; height: 24px; border-radius: 999px; cursor: pointer; }
+.tab.is-active { background: var(--ink); color: #fff; }
+.btn--stop { background: #b3261e; color: #fff; border-color: #b3261e; height: 32px; padding: 0 12px; font-size: 13px; }
+.btn--stop:hover { background: #8f1d17; border-color: #8f1d17; }
+
+/* ---------------- camera lab ---------------- */
+.lab__list { display: flex; flex-direction: column; gap: 6px; }
+.lab__row { display: grid; grid-template-columns: auto minmax(0, 1fr) 90px auto auto; align-items: center; gap: 10px; font-size: 13.5px; padding: 4px 6px; border-radius: 8px; }
+.lab__row.is-best { background: var(--bg-2); }
+.lab__label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lab__bar { display: block; width: 90px; }
+.lab__send { height: 28px; padding: 0 10px; font-size: 12.5px; margin-left: auto; }
+.lab__engine { display: flex; flex-direction: column; gap: 8px; }
+.lab__log { margin: 0; white-space: pre-wrap; max-height: 160px; overflow: auto; line-height: 1.5; }
+.lab__raw { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 60%; }

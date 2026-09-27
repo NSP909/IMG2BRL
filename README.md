@@ -73,17 +73,27 @@ Two seams are designed for replacement:
 ## Detection in: Pi camera → laptop → queue → finger
 
 The Pi's camera module streams MJPEG (`camera-stream.service`, tcp 8555).
-A bridge process on the laptop pulls that stream, runs YOLO26 for objects
-and Tesseract for text, and keeps a queue of what to send to the finger.
-The web app shows the live annotated feed, pops the queue one message at a
-time, plays it, and drives the solenoids.
+A bridge process on the laptop pulls that stream, runs YOLO26 for objects,
+reads text and classifies the scene with Claude (`claude-opus-5`, vision,
+structured JSON, low effort) with Tesseract as the offline fallback, and
+keeps a queue of what to send to the finger. The web app shows the live
+annotated feed, pops the queue one message at a time, plays it, and drives
+the solenoids.
 
 ```bash
 python3 pi/models/fetch_models.py yolo26n-seg.pt   # once: download the weights
-brew install tesseract                            # once: OCR
+brew install tesseract && pip install anthropic   # once: OCR fallback + Claude SDK
+echo ANTHROPIC_API_KEY=sk-ant-... > bridge/.env    # once: never committed (.gitignore)
 python3 bridge/detect_bridge.py                   # laptop side, keep running
 npm run dev                                       # web app on http://127.0.0.1:5173
 ```
+
+The prompt sent with each frame is `bridge/prompt.txt`; edit it freely. An
+`OPENAI_API_KEY` in `bridge/.env` selects OpenAI instead (`--vlm-provider`).
+Engines can be switched live from the **Camera lab** screen (top bar), which
+shows the feed, every YOLO detection, the Claude answer with latency, the
+Tesseract lines, and lets you send any of them to the finger. The **Stop**
+button in the top bar halts playback, drops all pins and clears the queue.
 
 - **Auto mode** (default): a label that stays in view for two passes is
   queued, with a 15 s cooldown per label so the same cup does not repeat.
@@ -95,7 +105,8 @@ npm run dev                                       # web app on http://127.0.0.1:
 
 Bridge API on `:8765`: `GET /state`, `GET /frame.jpg`, `GET /stream.mjpg`,
 `POST /next`, `POST /capture`, `POST /queue?text=`, `POST /clear`,
-`POST /mode?value=auto|manual`. The dev server forwards `/bridge/*` to it.
+`POST /mode?value=auto|manual`, `POST /engine?value=tesseract|vlm|both|none`,
+`POST /analyze`. The dev server forwards `/bridge/*` to it.
 
 The Pi camera has one consumer at a time: stop the bridge before using
 `tools/pi_camera_view.sh`, and vice versa.
@@ -117,7 +128,8 @@ pi/
   setup/                 first-boot config for a fresh Raspberry Pi OS card (USB gadget networking, SSH, user, Wi-Fi)
   models/                detection weights (not committed) + fetch_models.py to download them; see pi/models/README.md
 bridge/
-  detect_bridge.py       laptop: Pi camera -> YOLO26 + Tesseract -> queue -> web app / Pi
+  detect_bridge.py       laptop: Pi camera -> YOLO26 + Claude vision (Tesseract fallback) -> queue -> web app / Pi
+  prompt.txt             the prompt sent to Claude with each frame
 tools/
   solenoid.sh            fire dots / play text / open the panel from a Mac
   pi_camera_view.sh      live view from the Pi camera (rpicam-vid → ffplay)

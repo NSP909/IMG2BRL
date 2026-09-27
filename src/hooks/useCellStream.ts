@@ -34,6 +34,8 @@ export interface CellStream {
   prev(): void;
   restart(): void;
   seek(i: number): void;
+  /** Stop and go idle (index -1, nothing shown). */
+  stop(): void;
 }
 
 export function useCellStream(cells: BrailleCell[], opts: StreamOptions): CellStream {
@@ -104,5 +106,10 @@ export function useCellStream(cells: BrailleCell[], opts: StreamOptions): CellSt
     [total],
   );
 
-  return { index, total, current, playing, finished, holdMs, play, pause, toggle, next, prev, restart, seek };
+  const stop = useCallback(() => {
+    setPlaying(false);
+    setIndex(-1);
+  }, []);
+
+  return { index, total, current, playing, finished, holdMs, play, pause, toggle, next, prev, restart, seek, stop };
 }

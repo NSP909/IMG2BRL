@@ -1,13 +1,16 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
+  bridgeAnalyze,
   bridgeCapture,
   bridgeClear,
   bridgeNext,
+  bridgeSetEngine,
   bridgeSetMode,
   fetchBridgeState,
   loadBridgeUrl,
   streamUrl,
   type BridgeState,
+  type Engine,
   type QueueItem,
 } from '../lib/bridge';
 
@@ -25,6 +28,9 @@ export interface Bridge {
   next(): Promise<QueueItem | null>;
   setMode(mode: 'auto' | 'manual'): void;
   clear(): void;
+  setEngine(engine: Engine): void;
+  /** Run one OpenAI pass now. */
+  analyze(): void;
 }
 
 export function useBridge(): Bridge {
@@ -82,5 +88,16 @@ export function useBridge(): Bridge {
     bridgeClear(baseUrl).then(setState).catch(() => {});
   }, [baseUrl]);
 
-  return { baseUrl, online, state, streamUrl: streamUrl(baseUrl), capture, next, setMode, clear };
+  const setEngine = useCallback(
+    (engine: Engine) => {
+      bridgeSetEngine(baseUrl, engine).then(setState).catch(() => {});
+    },
+    [baseUrl],
+  );
+
+  const analyze = useCallback(() => {
+    bridgeAnalyze(baseUrl).catch(() => {});
+  }, [baseUrl]);
+
+  return { baseUrl, online, state, streamUrl: streamUrl(baseUrl), capture, next, setMode, clear, setEngine, analyze };
 }
