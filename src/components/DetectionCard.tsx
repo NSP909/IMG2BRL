@@ -12,7 +12,7 @@ export function DetectionCard({ detection, cellCount }: Props) {
         <span className="eyebrow">Detected</span>
         {detection && (
           <span className="small muted mono">
-            {detection.source === 'manual' ? 'typed' : 'camera'} · {formatTime(detection.at)}
+            {detection.source === 'manual' ? 'typed' : detection.source === 'microphone' ? 'microphone' : 'camera'} · {formatTime(detection.at)}
           </span>
         )}
       </div>
@@ -40,7 +40,7 @@ export function DetectionCard({ detection, cellCount }: Props) {
           </div>
         </>
       ) : (
-        <p className="muted">Nothing detected yet. Capture a frame or type some text.</p>
+        <p className="muted">Nothing recognized yet. Use the active input or type some text.</p>
       )}
     </section>
   );

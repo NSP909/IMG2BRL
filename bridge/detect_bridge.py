@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Detection bridge: Pi camera -> laptop -> queue -> braille finger.
+"""Recognition bridge: camera or Mac microphone -> queue -> braille finger.
 
   camera (Pi, MJPEG tcp 8555) ---> latest frame
   latest frame --every 0.5 s--> YOLO26 (objects, filtered to a short list of venue objects)
@@ -21,18 +21,23 @@ HTTP on :8765 (CORS open):
   POST /mode?value=auto|manual
   POST /engine?value=vlm|tesseract|none   who reads text: Claude (default), Tesseract (offline), nobody
   POST /analyze                read the text now, ignoring the 5 s gap
-  POST /pause?value=1|0        camera lock: stop detection, reads and queueing
+  POST /pause?value=1|0        pause the active camera or microphone input
+
+Sound mode (separate from the camera pipeline):
+  python3 bridge/detect_bridge.py --recognizer sound --wake-name Ritesh \
+      --wake-alias Reetesh --mic "MacBook Air Microphone"
 """
 import argparse, collections, json, os, re, subprocess, tempfile, threading, time
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 from urllib.parse import urlparse, parse_qs, quote
 from urllib.request import Request, urlopen
 
-import cv2
 import numpy as np
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+ap.add_argument("--recognizer", choices=["camera", "sound"], default="camera",
+                help="camera vision pipeline (default) or name-triggered microphone transcription")
 ap.add_argument("--pi", default="169.254.10.10", help="Pi address (solenoid server :8080, camera :8555)")
 ap.add_argument("--camera", default=None, help="camera source; default tcp://<pi>:8555, a webcam index like 0, or an image file")
 ap.add_argument("--port", type=int, default=8765)
@@ -58,7 +63,21 @@ ap.add_argument("--max-queue", type=int, default=8)
 ap.add_argument("--direct", action="store_true", help="play the queue on the Pi from here (no web app needed)")
 ap.add_argument("--cell-ms", type=int, default=900)
 ap.add_argument("--space-ms", type=int, default=500)
+ap.add_argument("--wake-name", default=None, help="sound mode: wearer name that must appear in an utterance")
+ap.add_argument("--wake-alias", action="append", default=[], help="sound mode: exact alternate spelling; repeatable")
+ap.add_argument("--mic", default="MacBook Air Microphone", help="sound mode: exact microphone name or input index")
+ap.add_argument("--transcription-model", default="gpt-transcribe",
+                help="sound mode: OpenAI transcription model")
+ap.add_argument("--transcription-timeout", type=float, default=15.0,
+                help="sound mode: maximum seconds for each cloud transcription request")
 args = ap.parse_args()
+if args.recognizer == "sound" and not (args.wake_name or "").strip():
+    ap.error("--wake-name is required when --recognizer sound is selected")
+if args.recognizer == "camera":
+    try:
+        import cv2
+    except ImportError as exc:
+        ap.error(f"camera mode requires OpenCV ({exc}); run: python3 -m pip install -r bridge/requirements.txt")
 CAMERA = args.camera if args.camera is not None else f"tcp://{args.pi}:8555"
 PI_URL = f"http://{args.pi}:8080"
 
@@ -93,6 +112,7 @@ if args.engine is None:
     args.engine = "vlm" if VLM_KEY else "tesseract"
 
 LOCK = threading.Lock()
+SOUND_SERVICE = None
 STATE = {
     "frame": None, "jpeg": None, "frame_at": 0.0, "camera_ok": False,
     "detections": [], "best": None, "mode": args.mode, "queue": collections.deque(),
@@ -101,6 +121,14 @@ STATE = {
     "read": {"available": bool(VLM_KEY) or True, "provider": VLM_PROVIDER, "model": None, "text": "", "confidence": 0.0,
              "latency_ms": 0, "at": 0, "requested_at": 0.0, "passes": 0, "raw": "", "error": None, "engine": None},
     "stats": {"fps": 0.0, "infer_ms": 0, "gate_ms": 0, "model": os.path.basename(args.weights), "device": args.device, "passes": 0},
+    "recognizer": args.recognizer,
+    "sound": {
+        "available": False, "device": None, "sample_rate": None, "listening": False, "paused": False,
+        "state": "off" if args.recognizer == "camera" else "starting", "level_dbfs": -120.0,
+        "vad_probability": 0.0, "wake_name": args.wake_name, "aliases": list(args.wake_alias),
+        "model": args.transcription_model, "latency_ms": 0, "accepted_count": 0, "discarded_count": 0,
+        "dropped_count": 0, "last_text": "", "error": None,
+    },
     "log": collections.deque(maxlen=40),
 }
 COOLDOWN = {}          # label -> last queued time
@@ -480,17 +508,30 @@ def choose_best(dets):
     return None
 
 
-def enqueue(det, reason):
+def enqueue(det, reason, source="camera"):
     with LOCK:
         if len(STATE["queue"]) >= args.max_queue:
             STATE["queue"].popleft()
         STATE["seq"] += 1
-        item = dict(det, id=f"cam-{STATE['seq']}", at=int(time.time() * 1000), source="camera")
+        prefix = "mic" if source == "microphone" else "cam"
+        item = dict(det, id=f"{prefix}-{STATE['seq']}", at=int(time.time() * 1000), source=source)
         item.pop("engine", None)
         STATE["queue"].append(item)
     COOLDOWN[det["label"].lower()] = time.time()
     log(f"queued [{reason}] {det['kind']}: {det['label']!r} ({int(det['confidence'] * 100)}%)  queue={len(STATE['queue'])}")
     return item
+
+
+def update_sound_status(changes):
+    """Thread-safe status sink used by the microphone service."""
+    with LOCK:
+        STATE["sound"].update(changes)
+
+
+def publish_speech(text, confidence):
+    """The only sound-mode path across the privacy boundary into the queue."""
+    enqueue({"kind": "speech", "label": text, "confidence": confidence, "box": None},
+            "name match", source="microphone")
 
 
 def maybe_queue_text(text, conf):
@@ -608,6 +649,7 @@ def snapshot():
         r = dict(STATE["read"])
         gap_left = max(0.0, args.read_gap - (time.time() - r["requested_at"]))
         return {
+            "recognizer": STATE["recognizer"], "sound": dict(STATE["sound"]),
             "camera_ok": STATE["camera_ok"], "frame_age_ms": int((time.time() - STATE["frame_at"]) * 1000) if STATE["frame_at"] else None,
             "detections": STATE["detections"], "best": STATE["best"], "mode": STATE["mode"], "paused": STATE["paused"], "engine": STATE["engine"],
             "queue": list(STATE["queue"]), "playing": STATE["playing"], "stats": dict(STATE["stats"]),
@@ -673,6 +715,8 @@ class Handler(BaseHTTPRequestHandler):
         if u.path == "/next":
             return self._json(200, {"item": pop_next(), "remaining": len(STATE["queue"])})
         if u.path == "/capture":
+            if args.recognizer == "sound":
+                return self._json(409, {"item": None, "error": "capture is unavailable in sound mode"})
             with LOCK:
                 best, paused = STATE["best"], STATE["paused"]
             if paused:
@@ -689,9 +733,13 @@ class Handler(BaseHTTPRequestHandler):
         if u.path == "/clear":
             with LOCK:
                 STATE["queue"].clear()
+            if SOUND_SERVICE is not None:
+                SOUND_SERVICE.clear_pending()
             log("queue cleared")
             return self._json(200, snapshot())
         if u.path == "/analyze":
+            if args.recognizer == "sound":
+                return self._json(409, {"ok": False, "error": "vision analysis is unavailable in sound mode"})
             FORCE_READ.set(); READ_NOW.set()
             return self._json(200, {"ok": True})
         if u.path == "/engine":
@@ -707,7 +755,10 @@ class Handler(BaseHTTPRequestHandler):
             with LOCK:
                 STATE["paused"] = v not in ("0", "false", "off")
                 paused = STATE["paused"]
-            log("CAMERA PAUSED" if paused else "camera resumed")
+            if SOUND_SERVICE is not None:
+                SOUND_SERVICE.set_paused(paused)
+            else:
+                log("CAMERA PAUSED" if paused else "camera resumed")
             return self._json(200, snapshot())
         if u.path == "/mode":
             v = q.get("value", [""])[0]
@@ -721,14 +772,35 @@ class Handler(BaseHTTPRequestHandler):
 
 
 if __name__ == "__main__":
-    threading.Thread(target=capture_loop, daemon=True).start()
-    threading.Thread(target=preview_loop, daemon=True).start()
-    threading.Thread(target=detect_loop, daemon=True).start()
-    threading.Thread(target=reader_loop, daemon=True).start()
+    if args.recognizer == "sound":
+        try:
+            from sound_mode import SoundConfig, SoundService, SoundSetupError
+            SOUND_SERVICE = SoundService(
+                SoundConfig(
+                    wake_name=args.wake_name.strip(), aliases=tuple(args.wake_alias),
+                    microphone=args.mic, api_key=OPENAI_KEY or "", model=args.transcription_model,
+                    request_timeout=args.transcription_timeout,
+                ),
+                on_result=publish_speech, on_status=update_sound_status, logger=log,
+            )
+            SOUND_SERVICE.start()
+        except (SoundSetupError, ValueError) as exc:
+            update_sound_status({"state": "error", "available": False, "listening": False, "error": str(exc)})
+            log(f"could not start sound mode: {exc}")
+            raise SystemExit(2)
+    else:
+        threading.Thread(target=capture_loop, daemon=True).start()
+        threading.Thread(target=preview_loop, daemon=True).start()
+        threading.Thread(target=detect_loop, daemon=True).start()
+        threading.Thread(target=reader_loop, daemon=True).start()
     if args.direct:
         threading.Thread(target=direct_loop, daemon=True).start()
-    log(f"bridge on http://0.0.0.0:{args.port}  camera={CAMERA}  pi={PI_URL}")
+    source = f"microphone={args.mic}" if args.recognizer == "sound" else f"camera={CAMERA}"
+    log(f"bridge on http://0.0.0.0:{args.port}  recognizer={args.recognizer}  {source}  pi={PI_URL}")
     try:
         ThreadingHTTPServer(("0.0.0.0", args.port), Handler).serve_forever()
     except KeyboardInterrupt:
         pass
+    finally:
+        if SOUND_SERVICE is not None:
+            SOUND_SERVICE.stop()

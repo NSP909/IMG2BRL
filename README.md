@@ -1,7 +1,8 @@
 # Braille Pin Visualizer
 
-Front end for the deafblind camera-to-braille project. It shows what the
-camera detected (an object label or a line of text), turns it into braille,
+Front end for the deafblind camera/sound-to-braille project. It shows what the
+active recognizer produced (an object label, visible text, or a name-triggered
+spoken utterance), turns it into braille,
 and plays it back one 3 × 2 cell at a time, the way the finger module will.
 While the hardware is still being built, the pin actuator is simulated on a
 timer.
@@ -15,7 +16,8 @@ npm run build      # type-checks, then writes a static build to dist/
 npm run preview    # serves dist/
 ```
 
-Node 18+ and npm. No other tooling.
+Node 18+ and npm. The recognition bridge uses Python 3.11; camera and sound
+dependencies are listed in `bridge/requirements.txt`.
 
 ## What you see
 
@@ -136,6 +138,59 @@ Bridge API on `:8765`: `GET /state`, `GET /frame.jpg`, `GET /stream.mjpg`,
 
 The Pi camera has one consumer at a time: stop the bridge before using
 `tools/pi_camera_view.sh`, and vice versa.
+
+## Sound mode: Mac microphone → name match → text
+
+Sound mode is separate from camera mode. It does not start the camera, YOLO,
+EAST, Tesseract, Claude, or any other vision worker. Silero VAD finds a spoken
+utterance, OpenAI `gpt-transcribe` transcribes it, and the bridge queues the
+**full utterance only when it contains the configured wearer name or an
+explicit alias**. No speech-to-text model is downloaded or run locally.
+
+```bash
+python3.11 -m venv .venv
+source .venv/bin/activate
+python -m pip install --upgrade pip
+python -m pip install -r bridge/requirements.txt
+
+# Add this line to bridge/.env (never committed):
+# OPENAI_API_KEY=sk-...
+
+python bridge/detect_bridge.py \
+  --recognizer sound \
+  --wake-name "Ritesh" \
+  --wake-alias "Reetesh" \
+  --mic "MacBook Air Microphone"
+
+# In another terminal:
+npm run dev
+```
+
+“Ritesh, your ride is here” queues the full sentence; “Your ride is here” is
+discarded. Matching uses whole words, and `--wake-alias` can be repeated for
+alternate spellings. Configured names are sent as transcription keyword hints.
+Completed utterances are sent to OpenAI with a 15-second request timeout. Raw
+audio is not saved, and rejected transcript content is never shown, queued, or
+logged.
+
+### macOS microphone setup
+
+Allow the terminal under **System Settings → Privacy & Security → Microphone**.
+List input names with:
+
+```bash
+python -c 'import sounddevice as s; print(s.query_devices())'
+```
+
+Pass the exact Mac input name or index with `--mic`; the bridge will not silently
+switch to the iPhone microphone.
+
+The Sound lab shows levels, state, latency, and counts. **Pause mic** and
+**Stop** discard buffered work. Run tests with:
+
+```bash
+python -m unittest discover -s bridge/tests -v
+```
 
 ## Real hardware: Raspberry Pi Zero 2 W + 6 solenoids
 

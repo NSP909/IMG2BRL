@@ -11,13 +11,14 @@ export function QueueCard({ bridge, nowPlaying }: Props) {
   const s = bridge.state;
   const queue = s?.queue ?? [];
   const auto = s?.mode === 'auto';
+  const sound = s?.recognizer === 'sound';
 
   return (
     <section className="card" aria-label="Detection queue">
       <div className="card__head">
         <span className="eyebrow">Queue</span>
         <span className="small muted">
-          {bridge.online ? (auto ? 'auto · new things in view are queued' : 'manual · queue with the capture button') : 'bridge offline'}
+          {bridge.online ? (sound ? 'name-containing speech only' : auto ? 'auto · new things in view are queued' : 'manual · queue with the capture button') : 'bridge offline'}
         </span>
       </div>
 
@@ -30,7 +31,7 @@ export function QueueCard({ bridge, nowPlaying }: Props) {
                 <span className="queue__label">{nowPlaying}</span>
               </div>
             )}
-            {queue.length === 0 && !nowPlaying && <p className="muted small">Nothing queued. Point the camera at an object or some text.</p>}
+            {queue.length === 0 && !nowPlaying && <p className="muted small">{sound ? `Nothing queued. Say ${s?.sound.wake_name ?? 'the configured name'} in an utterance.` : 'Nothing queued. Point the camera at an object or some text.'}</p>}
             {queue.map((q, i) => (
               <div key={q.id} className="queue__item">
                 <span className="queue__idx mono">{i + 1}</span>
@@ -42,11 +43,15 @@ export function QueueCard({ bridge, nowPlaying }: Props) {
           </div>
 
           <div className="queue__bar">
-            <label className="switch" htmlFor="queue-auto">
-              <input id="queue-auto" type="checkbox" checked={auto} onChange={(e) => bridge.setMode(e.target.checked ? 'auto' : 'manual')} />
-              <span className="switch__track" aria-hidden><span className="switch__knob" /></span>
-              <span>Auto-queue detections</span>
-            </label>
+            {sound ? (
+              <span className="small muted">Accepted speech queues automatically</span>
+            ) : (
+              <label className="switch" htmlFor="queue-auto">
+                <input id="queue-auto" type="checkbox" checked={auto} onChange={(e) => bridge.setMode(e.target.checked ? 'auto' : 'manual')} />
+                <span className="switch__track" aria-hidden><span className="switch__knob" /></span>
+                <span>Auto-queue detections</span>
+              </label>
+            )}
             <button type="button" className="btn" onClick={bridge.clear} disabled={queue.length === 0}>Clear</button>
           </div>
         </>
