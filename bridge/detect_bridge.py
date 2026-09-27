@@ -32,6 +32,7 @@ HTTP on :8765 (CORS open):
   POST /proximity?enabled=1|0[&threshold=0.55] opt-in: accept speech without the name while a person is close
   POST /rotate?deg=0|90|180|270                rotate camera frames clockwise (saved in bridge/camera.json)
   POST /camera_mode?value=objects|asl          same camera: YOLO/EAST/Claude, or ASL fingerspelling -> spoken aloud
+  POST /asl_classifier?value=cnn|knn|geometric switch Bragi's letter classifier live
   POST /camera_source?value=pi|webcam          switch between the Pi's camera and this laptop's webcam (ignored if --camera fixed it)
 
 ASL mode (bridge/asl_mode.py) is the opposite direction from everything else
@@ -102,11 +103,15 @@ ap.add_argument("--transcription-model", default="gpt-transcribe",
                 help="sound mode: OpenAI transcription model")
 ap.add_argument("--transcription-timeout", type=float, default=15.0,
                 help="sound mode: maximum seconds for each cloud transcription request")
-ap.add_argument("--asl-classifier", choices=["knn", "geometric"], default="knn",
-                help="asl mode: nearest-neighbour match against a recorded signer (24 letters, needs bridge/models/asl_samples.json), "
+ap.add_argument("--asl-classifier", choices=["cnn", "knn", "geometric"], default="knn",
+                help="asl mode: small skeleton CNN (26 letters), personal KNN (24 static letters), "
                      "or zero-training-data finger-angle rules (19 letters)")
 ap.add_argument("--asl-stable", type=int, default=2,
-                help="asl mode: consecutive detect passes the same letter must hold before it is spoken")
+                help="asl mode: consecutive passes required by the KNN/geometric classifiers")
+ap.add_argument("--asl-cnn-stable", type=int, default=4,
+                help="asl mode: consecutive confident CNN passes required before speech")
+ap.add_argument("--asl-interval", type=float, default=0.08,
+                help="asl mode: seconds between CNN passes when the bridge owns the camera")
 args = ap.parse_args()
 WAKE_FILE = os.path.join(HERE, "wake.json")
 
@@ -195,14 +200,13 @@ if args.engine is None:
 
 LOCK = threading.Lock()
 SOUND_SERVICE = None
-ASL = asl_mode.AslRecognizer(classifier=args.asl_classifier, stable_passes=args.asl_stable)
+ASL = asl_mode.AslRecognizer(classifier=args.asl_classifier, stable_passes=args.asl_stable,
+                             cnn_stable_passes=args.asl_cnn_stable)
 STATE = {
     "frame": None, "jpeg": None, "frame_at": 0.0, "camera_ok": False, "browser_frame_at": 0.0,
     # Same frame as "frame", but before STATE["rotate"] is applied. Rune wants
-    # the rotated frame (so it displays and reads upright); Bragi's KNN
-    # classifier was trained on samples recorded via a browser webcam that was
-    # never rotated, so it needs this one instead -- see asl_pass() call in
-    # detect_loop().
+    # the mounted camera rotated; Bragi's classifiers expect the webcam-style
+    # upright hand frame -- see asl_pass() in detect_loop().
     "frame_raw": None,
     "detections": [], "best": None, "mode": args.mode, "queue": collections.deque(),   # kept sorted: speech, then text, then objects
     # Same camera as objects/text; interpreted as ASL fingerspelling and spoken
@@ -213,7 +217,8 @@ STATE = {
     # current_camera_source()), unless --camera pinned it for a test.
     "camera_source": args.camera_source,
     "asl": {"available": False, "classifier": args.asl_classifier, "label": None,
-            "stable_count": 0, "stable_needed": args.asl_stable, "last_spoken": None, "error": None},
+            "stable_count": 0, "stable_needed": ASL.stable_needed, "last_spoken": None,
+            "confidence": 0.0, "moving": False, "error": None},
     "rotate": load_rotate(), "frame_size": None,
     "visible": [], "scene": {"diff": 0.0, "changed_at": 0.0, "changes": 0, "pruned": 0},
     # Nearby-voice pathway (opt-in, off at every start): when a person is close to the
@@ -750,8 +755,10 @@ def asl_pass(frame):
     s = ASL.state
     with LOCK:
         STATE["asl"].update(
-            available=s.available, label=s.label, stable_count=s.stable_count,
-            last_spoken=s.last_spoken, error=s.error,
+            available=s.available, classifier=ASL.classifier, label=s.label,
+            stable_count=s.stable_count, stable_needed=ASL.stable_needed,
+            last_spoken=s.last_spoken, confidence=round(s.confidence, 3),
+            moving=s.moving, error=s.error,
         )
     if letter:
         asl_mode.speak(letter)
@@ -782,8 +789,8 @@ def detect_loop():
         if camera_mode == "asl":
             # Not `small`/`frame`: those went through STATE["rotate"], which
             # Rune needs to read upright but which rotates hand landmarks
-            # away from the orientation the KNN samples were recorded in
-            # (a browser webcam feed, never rotated) -- see STATE["frame_raw"].
+            # away from the orientation the Bragi classifiers expect
+            # (a browser-style webcam feed, never rotated) -- see STATE["frame_raw"].
             with LOCK:
                 asl_frame = STATE["frame_raw"]
             if asl_frame is None:
@@ -796,7 +803,7 @@ def detect_loop():
             with LOCK:
                 STATE["detections"], STATE["best"] = [], None
                 STATE["text"].update(present=False, cells=0, box=None)
-            time.sleep(args.interval)
+            time.sleep(args.asl_interval if ASL.classifier == "cnn" else args.interval)
             continue
         t = time.time()
         dets = run_yolo(model, small)
@@ -1081,7 +1088,8 @@ class Handler(BaseHTTPRequestHandler):
             if v == "asl":
                 ASL.ensure_loaded()
                 with LOCK:
-                    STATE["asl"].update(available=ASL.state.available, error=ASL.state.error)
+                    STATE["asl"].update(available=ASL.state.available, classifier=ASL.classifier,
+                                        stable_needed=ASL.stable_needed, error=ASL.state.error)
                 if not ASL.state.available:
                     return self._json(503, {"error": ASL.state.error or "ASL recognizer failed to load", **snapshot()})
             with LOCK:
@@ -1089,6 +1097,21 @@ class Handler(BaseHTTPRequestHandler):
                 if v == "objects":
                     STATE["asl"].update(label=None, stable_count=0, last_spoken=None)
             log(f"camera mode -> {v}")
+            return self._json(200, snapshot())
+        if u.path == "/asl_classifier":
+            v = q.get("value", [""])[0]
+            if v not in ASL.CLASSIFIERS:
+                return self._json(400, {"error": "value must be cnn, knn, or geometric"})
+            if not ASL.set_classifier(v):
+                with LOCK:
+                    STATE["asl"].update(available=ASL.state.available, classifier=ASL.classifier,
+                                        stable_needed=ASL.stable_needed, error=ASL.state.error)
+                return self._json(503, {"error": ASL.state.error or "ASL classifier failed to load", **snapshot()})
+            with LOCK:
+                STATE["asl"].update(available=True, classifier=ASL.classifier, label=None,
+                                    stable_count=0, stable_needed=ASL.stable_needed,
+                                    last_spoken=None, confidence=0.0, moving=False, error=None)
+            log(f"asl classifier -> {v}")
             return self._json(200, snapshot())
         if u.path == "/camera_source":
             v = q.get("value", [""])[0]

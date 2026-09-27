@@ -219,36 +219,38 @@ or the API directly:
 ```bash
 POST /camera_mode?value=asl       # switch; loads the hand model on first use
 POST /camera_mode?value=objects   # back to YOLO/EAST/Claude
+POST /asl_classifier?value=cnn    # live switch: cnn, knn, or geometric
 ```
 
 `GET /state` reports it under `"asl"`: `available`, `classifier`, the
 letter currently being read, how many consecutive passes it's held, the
 last letter spoken, and `error` if the hand model failed to load.
 
-**Recognition**, in `bridge/asl_mode.py`: MediaPipe's `HandLandmarker`
-(the same 21-landmark model as the browser prototype this was ported from)
-feeds one of two classifiers, chosen with `--asl-classifier`:
+**Recognition**, in `bridge/asl_mode.py`: MediaPipe extracts 21 hand landmarks
+and feeds one of three classifiers. Choose one live from the Bragi panel or at
+startup with `--asl-classifier`:
 
 | Classifier | Letters | Training data | Notes |
 | --- | --- | --- | --- |
-| `knn` (default) | 24 (all static letters) | `bridge/models/asl_samples.json`, 1,440 recorded samples | Matched against a specific recorded signer's hand |
+| `cnn` | 26 | `bridge/models/asl_cnn_model.onnx`, 1.2 MB | Renders the landmarks as a normalized 96×96 skeleton and runs a small ONNX CNN; J/Z also use short motion trajectories |
+| `knn` (legacy default) | 24 (all static letters) | `bridge/models/asl_samples.json`, 1,440 recorded samples | Matched against a specific recorded signer's hand |
 | `geometric` | 19 | None | Finger-joint-angle rules; no recording needed, weaker on the closed-fist letters (A/S/T/N/M) |
 
-J and Z are excluded from both: they're traced through the air, and this
-reads one still frame at a time. A letter is only spoken once it has held
-for `--asl-stable` consecutive passes (default 2) and differs from the last
-one spoken, so a hand passing through a shape on its way to another one
-doesn't get announced.
+J and Z are excluded from the legacy KNN and geometric paths because they are
+traced through the air. The CNN combines its per-frame classification with a
+small rule-based trajectory window for those two letters. A letter is spoken
+only after consecutive confident passes and only when it differs from the last
+one spoken, so a hand passing through a shape does not get announced.
 
 ```bash
-python3 -m pip install -r bridge/requirements.txt   # adds mediapipe==0.10.30 (pinned: 1.0.x
-                                                     # crashes on load on Apple Silicon, a mediapipe bug)
+python3 -m pip install -r bridge/requirements.txt
 python3 bridge/detect_bridge.py                     # ASL mode is a live toggle, not a separate process
 ```
 
-The hand model (`hand_landmarker.task`, ~7.8 MB) downloads once to
-`bridge/models/` on first switch to ASL mode, same pattern as the YOLO and
-EAST weights; not committed.
+The legacy KNN/rules path downloads `hand_landmarker.task` (~7.8 MB) once to
+`bridge/models/`. The CNN's 1.2 MB ONNX model is committed, while its MediaPipe
+Hands dependency ships with the pinned package. Its upstream license and
+training-data provenance are recorded in `bridge/THIRD_PARTY_NOTICES.md`.
 
 ## Real hardware: Raspberry Pi Zero 2 W + 6 solenoids
 

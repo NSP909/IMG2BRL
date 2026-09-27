@@ -4,11 +4,10 @@ this module just interprets the frame differently and speaks locally instead
 of enqueueing braille -- Bragi answers to a bystander near the wearer, not to
 the wearer's own finger, so it never touches the braille queue.
 
-This is a direct port of the browser prototype (MediaPipe Tasks Vision +
-21-landmark geometry) to Python, using the same HandLandmarker model file and
-the same 1,440-sample recording (``bridge/models/asl_samples.json``) that was
-validated live in the browser version. The geometry and the KNN math are
-unchanged; only the runtime is different.
+MediaPipe hand landmarks feed three selectable classifiers: the original
+1,440-sample personal KNN, the original geometric rules, and a small ONNX CNN
+that sees a normalized rendering of the 21 landmarks. Only one classifier is
+active at a time; switching never removes or rewrites the older implementations.
 """
 
 from __future__ import annotations
@@ -143,96 +142,169 @@ class AslState:
     speaking: bool = False
     error: Optional[str] = None
     available: bool = False
+    confidence: float = 0.0
+    moving: bool = False
 
 
 class AslRecognizer:
-    """Owns the MediaPipe HandLandmarker, the KNN sample set, and per-pass
-    stability so a letter only speaks once it has held for a couple of
-    passes, mirroring the ~1/3 s hold used in the browser version (there it
-    was ~10 frames at 30 fps; here detect_loop already samples at a coarser
-    interval, so 2 consecutive passes is the equivalent)."""
+    """Shared hand detector plus a live-selectable letter classifier."""
 
-    def __init__(self, classifier: str = "knn", stable_passes: int = 2, k: int = 5):
+    CLASSIFIERS = ("cnn", "knn", "geometric")
+
+    def __init__(self, classifier: str = "cnn", stable_passes: int = 2,
+                 cnn_stable_passes: int = 4, k: int = 5):
+        if classifier not in self.CLASSIFIERS:
+            raise ValueError(f"unknown ASL classifier: {classifier}")
         self.classifier = classifier
         self.stable_passes = stable_passes
+        self.cnn_stable_passes = cnn_stable_passes
         self.k = k
         self.state = AslState()
         self._landmarker = None
+        self._cnn_hands = None
         self._samples: list[dict] = []
-        self._lock = threading.Lock()
+        self._cnn = None
+        self._lock = threading.RLock()
+
+    @property
+    def stable_needed(self) -> int:
+        return self.cnn_stable_passes if self.classifier == "cnn" else self.stable_passes
 
     # -- setup ---------------------------------------------------------
     def ensure_loaded(self) -> None:
         with self._lock:
-            self._ensure_loaded_locked()
+            try:
+                self._ensure_detector_locked(self.classifier)
+                self._ensure_classifier_locked(self.classifier)
+                self.state.available = True
+                self.state.error = None
+            except Exception as exc:  # surfaced to STATE["asl"]["error"], not raised into detect_loop
+                self.state.available = False
+                self.state.error = str(exc)
 
     def _ensure_loaded_locked(self) -> None:
         if self._landmarker is not None:
             return
-        try:
-            _download_model_if_missing()
-            from mediapipe.tasks.python import BaseOptions
-            from mediapipe.tasks.python.vision import (
-                HandLandmarker,
-                HandLandmarkerOptions,
-                RunningMode,
-            )
+        _download_model_if_missing()
+        from mediapipe.tasks.python import BaseOptions
+        from mediapipe.tasks.python.vision import HandLandmarker, HandLandmarkerOptions, RunningMode
 
-            options = HandLandmarkerOptions(
-                # CPU, explicitly: the GPU/Metal delegate crashed outright in
-                # testing on this machine (mediapipe 1.0.1's macOS GPU path),
-                # so don't leave it to the (GPU-leaning) default.
-                base_options=BaseOptions(model_asset_path=MODEL_PATH, delegate=BaseOptions.Delegate.CPU),
-                running_mode=RunningMode.IMAGE,
-                num_hands=1,
-            )
-            self._landmarker = HandLandmarker.create_from_options(options)
-            if self.classifier == "knn":
-                self._samples = _load_samples()
+        options = HandLandmarkerOptions(
+            # CPU, explicitly: the GPU/Metal delegate crashed outright in
+            # testing on this machine (mediapipe 1.0.1's macOS GPU path).
+            base_options=BaseOptions(model_asset_path=MODEL_PATH, delegate=BaseOptions.Delegate.CPU),
+            running_mode=RunningMode.IMAGE,
+            num_hands=1,
+        )
+        self._landmarker = HandLandmarker.create_from_options(options)
+
+    def _ensure_detector_locked(self, classifier: str) -> None:
+        if classifier != "cnn":
+            self._ensure_loaded_locked()
+            return
+        if self._cnn_hands is not None:
+            return
+        import mediapipe as mp
+        if not hasattr(mp, "solutions"):
+            raise RuntimeError("Small CNN needs mediapipe==0.10.21; reinstall bridge/requirements.txt")
+        self._cnn_hands = mp.solutions.hands.Hands(
+            model_complexity=1,
+            max_num_hands=1,
+            min_detection_confidence=0.5,
+            min_tracking_confidence=0.5,
+        )
+
+    def _ensure_classifier_locked(self, classifier: str) -> None:
+        if classifier == "knn" and not self._samples:
+            self._samples = _load_samples()
+        elif classifier == "cnn" and self._cnn is None:
+            try:
+                from .asl_cnn import CnnClassifier
+            except ImportError:  # detect_bridge.py is also supported as a direct script
+                from asl_cnn import CnnClassifier
+            self._cnn = CnnClassifier()
+
+    def set_classifier(self, classifier: str) -> bool:
+        """Load and switch atomically. A failed new model leaves the old one active."""
+        if classifier not in self.CLASSIFIERS:
+            raise ValueError(f"unknown ASL classifier: {classifier}")
+        with self._lock:
+            try:
+                self._ensure_detector_locked(classifier)
+                self._ensure_classifier_locked(classifier)
+            except Exception as exc:
+                self.state.error = str(exc)
+                return False
+            self.classifier = classifier
+            self._reset_state_locked()
             self.state.available = True
             self.state.error = None
-        except Exception as exc:  # surfaced to STATE["asl"]["error"], not raised into detect_loop
-            self.state.available = False
-            self.state.error = str(exc)
+            return True
+
+    def _reset_state_locked(self) -> None:
+        self.state.label = None
+        self.state.stable_count = 0
+        self.state.last_spoken = None
+        self.state.confidence = 0.0
+        self.state.moving = False
+        if self._cnn is not None:
+            self._cnn.reset()
 
     # -- per-frame -------------------------------------------------------
     def process(self, frame_bgr) -> Optional[str]:
         """One camera frame in, a newly-*confirmed* stable letter out (or
         None most passes). Also updates self.state for the status panel."""
-        if self._landmarker is None:
-            self.ensure_loaded()
-        if self._landmarker is None:
+        with self._lock:
+            detector = self._cnn_hands if self.classifier == "cnn" else self._landmarker
+            if detector is None:
+                self.ensure_loaded()
+                detector = self._cnn_hands if self.classifier == "cnn" else self._landmarker
+            if detector is None or not self.state.available:
+                return None
+
+            rgb = frame_bgr[:, :, ::-1].copy()
+            if self.classifier == "cnn":
+                result = self._cnn_hands.process(rgb)
+                hands = result.multi_hand_landmarks or []
+                landmarks = hands[0].landmark if hands else None
+            else:
+                import mediapipe as mp
+                image = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb)
+                result = self._landmarker.detect(image)
+                landmarks = result.hand_landmarks[0] if result.hand_landmarks else None
+            if landmarks is None:
+                self._reset_state_locked()
+                return None
+
+            letter, confidence, moving = self._classify(landmarks, frame_bgr.shape)
+            visible = letter if confidence >= (0.50 if self.classifier == "cnn" else 0.0) else None
+            candidate = visible if confidence >= (0.75 if self.classifier == "cnn" else 0.0) and not moving else None
+            previous = self.state.label
+            self.state.label = visible
+            self.state.confidence = confidence
+            self.state.moving = moving
+
+            if candidate and candidate == previous:
+                self.state.stable_count += 1
+            elif candidate:
+                self.state.stable_count = 1
+            else:
+                self.state.stable_count = 0
+
+            if candidate and self.state.stable_count == self.stable_needed and candidate != self.state.last_spoken:
+                self.state.last_spoken = candidate
+                return candidate
+            if not visible:
+                self.state.last_spoken = None
             return None
-        import mediapipe as mp
 
-        rgb = frame_bgr[:, :, ::-1].copy()
-        image = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb)
-        result = self._landmarker.detect(image)
-        if not result.hand_landmarks:
-            self.state.label, self.state.stable_count = None, 0
-            return None
-
-        landmarks = result.hand_landmarks[0]
-        letter = self._classify(landmarks)
-
-        if letter and letter == self.state.label:
-            self.state.stable_count += 1
-        else:
-            self.state.label, self.state.stable_count = letter, 1
-
-        self.state.label = letter
-        if letter and self.state.stable_count == self.stable_passes and letter != self.state.last_spoken:
-            self.state.last_spoken = letter
-            return letter
-        if not letter:
-            self.state.last_spoken = None
-        return None
-
-    def _classify(self, landmarks) -> Optional[str]:
+    def _classify(self, landmarks, frame_shape) -> tuple[Optional[str], float, bool]:
+        if self.classifier == "cnn":
+            return self._cnn.classify(landmarks, frame_shape)
         if self.classifier == "geometric":
-            return heuristic_classify(landmarks)
+            return heuristic_classify(landmarks), 1.0, False
         vec = normalize_vector(landmarks)
-        return _knn_classify(vec, self._samples, self.k)
+        return _knn_classify(vec, self._samples, self.k), 1.0, False
 
 
 def _knn_classify(vec: list[float], samples: list[dict], k: int) -> Optional[str]:

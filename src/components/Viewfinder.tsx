@@ -35,9 +35,11 @@ interface Props {
    * attach the OS request to), so the browser tab does it instead. */
   browserFeedActive?: boolean;
   onFrame?: (blob: Blob) => void;
+  /** Faster sampling is useful for Bragi's temporal smoothing and hold gate. */
+  captureMs?: number;
 }
 
-export function Viewfinder({ detection, scanning, onCapture, live, aslActive, browserFeedActive, onFrame }: Props) {
+export function Viewfinder({ detection, scanning, onCapture, live, aslActive, browserFeedActive, onFrame, captureMs = CAPTURE_MS }: Props) {
   const cam = useCamera();
   const webcam = cam.state === 'on';
   // A real detection feed exists whenever the bridge has state, regardless of
@@ -67,9 +69,9 @@ export function Viewfinder({ detection, scanning, onCapture, live, aslActive, br
       canvas.height = video.videoHeight;
       ctx.drawImage(video, 0, 0);
       canvas.toBlob((blob) => { if (blob) onFrameRef.current?.(blob); }, 'image/jpeg', 0.85);
-    }, CAPTURE_MS);
+    }, captureMs);
     return () => window.clearInterval(id);
-  }, [browserFeedActive, cam.state, cam.videoRef]);
+  }, [browserFeedActive, cam.state, cam.videoRef, captureMs]);
 
   return (
     <section className="card viewfinder" aria-label="Camera">

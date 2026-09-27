@@ -5,6 +5,7 @@ import {
   bridgeClear,
   bridgeNext,
   bridgeSetCameraMode,
+  bridgeSetAslClassifier,
   bridgeSetCameraSource,
   bridgeSetEngine,
   bridgeSetMode,
@@ -16,6 +17,7 @@ import {
   loadBridgeUrl,
   streamUrl,
   type BridgeState,
+  type AslClassifier,
   type CameraMode,
   type CameraSource,
   type Engine,
@@ -55,6 +57,8 @@ export interface Bridge {
    * spoken aloud (Bragi). Resolves false (state left unchanged) if the ASL
    * model failed to load. */
   setCameraMode(mode: CameraMode): Promise<boolean>;
+  /** Switch between the small CNN and the preserved legacy classifiers. */
+  setAslClassifier(classifier: AslClassifier): Promise<boolean>;
   /** Which physical camera to read from: the Pi's own, or this laptop's
    * webcam (handy for testing away from the Pi). Resolves false if --camera
    * pinned the source at bridge startup. */
@@ -187,6 +191,19 @@ export function useBridge(): Bridge {
     [baseUrl, refresh],
   );
 
+  const setAslClassifier = useCallback(
+    async (classifier: AslClassifier) => {
+      try {
+        setState(await bridgeSetAslClassifier(baseUrl, classifier));
+        return true;
+      } catch {
+        void refresh();
+        return false;
+      }
+    },
+    [baseUrl, refresh],
+  );
+
   const setCameraSource = useCallback(
     async (source: CameraSource) => {
       try {
@@ -219,6 +236,7 @@ export function useBridge(): Bridge {
     setProximity,
     setRotate,
     setCameraMode,
+    setAslClassifier,
     setCameraSource,
   };
 }

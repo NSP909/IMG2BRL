@@ -7,7 +7,7 @@ import { useBridge } from './hooks/useBridge';
 import { TopBar, type Status, type View } from './components/TopBar';
 import { DevView } from './components/DevView';
 import { Viewfinder, type LiveFeed } from './components/Viewfinder';
-import { bridgeSendAslFrame, bridgeSendCameraFrame, type AslStatus } from './lib/bridge';
+import { bridgeSendAslFrame, bridgeSendCameraFrame, type AslClassifier, type AslStatus } from './lib/bridge';
 import { BragiPanel } from './components/BragiPanel';
 import { BragiHistoryCard } from './components/BragiHistoryCard';
 import { DetectionCard } from './components/DetectionCard';
@@ -26,7 +26,8 @@ const FRAME_LOG_SIZE = 6;
 const QUEUE_GAP_MS = 700;
 /** Shown only until the bridge's first /state response arrives. */
 const DEFAULT_ASL: AslStatus = {
-  available: false, classifier: 'knn', label: null, stable_count: 0, stable_needed: 2, last_spoken: null, error: null,
+  available: false, classifier: 'knn', label: null, stable_count: 0, stable_needed: 2,
+  last_spoken: null, confidence: 0, moving: false, error: null,
 };
 
 /** `?text=Hello` in the URL plays that text on load; otherwise wait for real input. */
@@ -45,6 +46,7 @@ export default function App() {
   const [detection, setDetection] = useState<Detection | null>(initialDetection);
   const [scanning, setScanning] = useState(false);
   const [cameraModeBusy, setCameraModeBusy] = useState(false);
+  const [aslClassifierBusy, setAslClassifierBusy] = useState(false);
   const sampleCursor = useRef(0);
   const scanTimer = useRef<number | null>(null);
 
@@ -232,6 +234,14 @@ export default function App() {
     [bridgeSetCameraMode],
   );
   const { baseUrl } = bridge;
+  const handleAslClassifier = useCallback(
+    async (classifier: AslClassifier) => {
+      setAslClassifierBusy(true);
+      await bridge.setAslClassifier(classifier);
+      setAslClassifierBusy(false);
+    },
+    [bridge],
+  );
   // Browser camera drives detection whenever the bridge's own camera (the Pi
   // stream, or a webcam it opened itself) isn't the one supplying frames --
   // same fallback for Rune and Bragi alike, since detect_loop() feeds
@@ -328,6 +338,7 @@ export default function App() {
               aslActive={aslMode}
               browserFeedActive={browserFeedActive}
               onFrame={handleFrame}
+              captureMs={aslMode && bridge.state?.asl.classifier === 'cnn' ? 100 : 350}
             />
           )}
           {!aslMode && <DetectionCard detection={detection} cellCount={cells.length} />}
@@ -340,7 +351,11 @@ export default function App() {
 
         {aslMode ? (
           <div className="col" aria-label="Output">
-            <BragiPanel asl={bridge.state?.asl ?? DEFAULT_ASL} />
+            <BragiPanel
+              asl={bridge.state?.asl ?? DEFAULT_ASL}
+              onClassifier={handleAslClassifier}
+              classifierBusy={aslClassifierBusy}
+            />
             <BragiHistoryCard history={aslHistory} onClear={clearAslHistory} />
           </div>
         ) : (

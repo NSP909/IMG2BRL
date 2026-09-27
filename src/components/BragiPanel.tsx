@@ -1,9 +1,17 @@
 import { useEffect, useRef, useState } from 'react';
-import type { AslStatus } from '../lib/bridge';
+import type { AslClassifier, AslStatus } from '../lib/bridge';
 
 interface Props {
   asl: AslStatus;
+  onClassifier(classifier: AslClassifier): void;
+  classifierBusy?: boolean;
 }
+
+const CLASSIFIERS: { value: AslClassifier; label: string }[] = [
+  { value: 'cnn', label: 'Small CNN' },
+  { value: 'knn', label: 'Personal KNN' },
+  { value: 'geometric', label: 'Rules' },
+];
 
 type Status = 'loading' | 'error' | 'idle' | 'reading' | 'spoken';
 
@@ -31,7 +39,7 @@ const STATUS_DOT: Record<Status, string> = {
  * is the "what's happening right now" card; the running transcript lives in
  * BragiHistoryCard alongside it.
  */
-export function BragiPanel({ asl }: Props) {
+export function BragiPanel({ asl, onClassifier, classifierBusy = false }: Props) {
   const holding = asl.label ? Math.min(asl.stable_count, asl.stable_needed) : 0;
   const pct = asl.label ? (holding / asl.stable_needed) * 100 : 0;
 
@@ -59,7 +67,7 @@ export function BragiPanel({ asl }: Props) {
     lastSpokenRef.current = asl.last_spoken;
   }, [asl.available, asl.last_spoken]);
 
-  const status: Status = !asl.available ? (asl.error ? 'error' : 'loading') : justSpoken ? 'spoken' : asl.label ? 'reading' : 'idle';
+  const status: Status = asl.error ? 'error' : !asl.available ? 'loading' : justSpoken ? 'spoken' : asl.label ? 'reading' : 'idle';
 
   return (
     <section className="card" aria-label="Bragi: ASL to speech">
@@ -71,8 +79,28 @@ export function BragiPanel({ asl }: Props) {
         </span>
       </div>
 
+      <div className="field__row">
+        <span className="small muted">Letter model</span>
+        <div className="tabs" role="radiogroup" aria-label="ASL letter model">
+          {CLASSIFIERS.map(({ value, label }) => (
+            <button
+              key={value}
+              type="button"
+              className={`tab ${asl.classifier === value ? 'is-active' : ''}`}
+              onClick={() => onClassifier(value)}
+              disabled={classifierBusy || asl.classifier === value}
+              aria-pressed={asl.classifier === value}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {asl.error && <p className="sound__error small">{asl.error}</p>}
+
       {!asl.available ? (
-        <p className="muted">{asl.error || 'Loading the hand model…'}</p>
+        !asl.error && <p className="muted">Loading the hand model…</p>
       ) : (
         <>
           <div className="bragi__hero">
@@ -85,8 +113,10 @@ export function BragiPanel({ asl }: Props) {
 
           <div className="conf">
             <div className="conf__row">
-              <span className="muted">{asl.label ? `Holding ${holding}/${asl.stable_needed}` : 'Fingerspell one letter at a time'}</span>
-              {asl.label && <span className="mono">{Math.round(pct)}%</span>}
+              <span className="muted">
+                {asl.moving ? 'Tracking movement…' : asl.label ? `Holding ${holding}/${asl.stable_needed}` : 'Fingerspell one letter at a time'}
+              </span>
+              {asl.label && <span className="mono">{asl.classifier === 'cnn' ? `${Math.round(asl.confidence * 100)}% confidence` : `${Math.round(pct)}% held`}</span>}
             </div>
             <div className="conf__bar">
               <div className="conf__fill" style={{ width: `${pct}%` }} />

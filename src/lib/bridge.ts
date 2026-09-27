@@ -47,6 +47,7 @@ export type Engine = 'vlm' | 'tesseract' | 'none';
 export type Recognizer = 'camera' | 'sound' | 'both';
 /** Same camera either way: YOLO/EAST/Claude objects+text, or ASL fingerspelling spoken aloud. */
 export type CameraMode = 'objects' | 'asl';
+export type AslClassifier = 'cnn' | 'knn' | 'geometric';
 /** Which physical camera the bridge reads frames from. */
 export type CameraSource = 'pi' | 'webcam';
 
@@ -55,11 +56,13 @@ export type CameraSource = 'pi' | 'webcam';
  * everything else here -- it never enters the braille queue. */
 export interface AslStatus {
   available: boolean;
-  classifier: 'knn' | 'geometric';
+  classifier: AslClassifier;
   label: string | null;
   stable_count: number;
   stable_needed: number;
   last_spoken: string | null;
+  confidence: number;
+  moving: boolean;
   error: string | null;
 }
 
@@ -252,6 +255,12 @@ export function bridgeSetRotate(baseUrl: string, deg: 0 | 90 | 180 | 270): Promi
  * expect the promise to reject. */
 export function bridgeSetCameraMode(baseUrl: string, mode: CameraMode): Promise<BridgeState> {
   return post<BridgeState>(baseUrl, `/camera_mode?value=${mode}`);
+}
+
+/** Switch Bragi's classifier without restarting the bridge. The old classifier
+ * stays active when the requested model cannot be loaded. */
+export function bridgeSetAslClassifier(baseUrl: string, classifier: AslClassifier): Promise<BridgeState> {
+  return post<BridgeState>(baseUrl, `/asl_classifier?value=${classifier}`);
 }
 
 /** Switch which physical camera capture_loop() reads from: the Pi's own, or
