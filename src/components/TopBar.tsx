@@ -25,6 +25,8 @@ interface Props {
   /** Microphone lock: listening stops and buffered speech is discarded. */
   micPaused: boolean;
   onPauseMic(paused: boolean): void;
+  /** The opt-in nearby-voice pathway is on: show it, it is easy to forget. */
+  nearbyVoice: boolean;
 }
 
 const STATUS_TEXT: Record<Status, string> = {
@@ -35,7 +37,7 @@ const STATUS_TEXT: Record<Status, string> = {
   complete: 'Message complete',
 };
 
-export function TopBar({ status, index, total, live, host, view, onView, onStop, pinsLocked, onLockPins, recognizer, cameraPaused, onPauseCamera, micPaused, onPauseMic }: Props) {
+export function TopBar({ status, index, total, live, host, view, onView, onStop, pinsLocked, onLockPins, recognizer, cameraPaused, onPauseCamera, micPaused, onPauseMic, nearbyVoice }: Props) {
   const showCount = status === 'streaming' || status === 'paused';
   const hasMic = recognizer !== 'camera';
   const hasCamera = recognizer !== 'sound';
@@ -66,6 +68,12 @@ export function TopBar({ status, index, total, live, host, view, onView, onStop,
           <button type="button" className={`tab ${view === 'main' ? 'is-active' : ''}`} onClick={() => onView('main')}>Finger</button>
           <button type="button" className={`tab ${view === 'lab' ? 'is-active' : ''}`} onClick={() => onView('lab')}>{hasCamera ? 'Camera lab' : 'Sound lab'}</button>
         </nav>
+        {nearbyVoice && (
+          <span className="pill pill--warn" title="Speech from a person close to the camera is accepted without the name">
+            <span className="pill__dot pill__dot--sim" />
+            Nearby voice on
+          </span>
+        )}
         <span className="pill" title={pinsLocked ? 'Pins are locked on the Pi' : live ? `Solenoid cell on the Pi at ${host}` : 'The Pi is not driving pins right now'}>
           <span className={`pill__dot ${pinsLocked ? 'pill__dot--locked' : live ? 'pill__dot--live' : 'pill__dot--sim'}`} />
           {pinsLocked ? 'Pins locked' : live ? 'Live hardware' : 'Simulated hardware'}

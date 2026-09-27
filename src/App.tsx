@@ -192,6 +192,7 @@ export default function App() {
           detections: bridge.state.detections,
           best: bridge.state.best,
           stats: bridge.state.stats,
+          frameSize: bridge.state.frame_size,
         }
       : null;
   const nowPlaying = detection && (detection.source === 'camera' || detection.source === 'microphone') && stream.index >= 0 && !stream.finished ? detection.label : null;
@@ -214,6 +215,7 @@ export default function App() {
         onPauseCamera={bridge.setPaused}
         micPaused={bridge.micPaused}
         onPauseMic={bridge.setMicPaused}
+        nearbyVoice={bridge.state?.proximity.enabled ?? false}
       />
 
       {view === 'lab' ? (

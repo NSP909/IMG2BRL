@@ -26,6 +26,8 @@ HTTP on :8765 (CORS open):
   POST /analyze                read the text now, ignoring the 5 s gap
   POST /pause?value=1|0&target=all|camera|mic   pause the camera, the microphone, or both
   POST /wake?name=Priya&aliases=Pri,Priyan     change the wearer name the microphone listens for
+  POST /proximity?enabled=1|0[&threshold=0.55] opt-in: accept speech without the name while a person is close
+  POST /rotate?deg=0|90|180|270                rotate camera frames clockwise (saved in bridge/camera.json)
 
 Sound mode (separate from the camera pipeline):
   python3 bridge/detect_bridge.py --recognizer sound --wake-name Ritesh \
@@ -60,6 +62,11 @@ ap.add_argument("--vlm-provider", choices=["auto", "anthropic", "openai"], defau
 ap.add_argument("--vlm-model", default="auto", help="vision model id; auto = claude-opus-5 (Claude) or newest gpt (OpenAI)")
 ap.add_argument("--read-gap", type=float, default=5.0, help="minimum seconds between two Claude requests")
 ap.add_argument("--prompt", default=os.path.join(HERE, "prompt.txt"), help="prompt file for the text read")
+ap.add_argument("--rotate", type=int, choices=[0, 90, 180, 270], default=None,
+                help="rotate camera frames clockwise by this many degrees (default: bridge/camera.json or 90)")
+ap.add_argument("--proximity", action="store_true", help="start with the nearby-voice pathway ON (default off)")
+ap.add_argument("--proximity-threshold", type=float, default=0.55,
+                help="a person whose box spans this fraction of the frame height counts as 'close'")
 ap.add_argument("--mode", choices=["auto", "manual"], default="auto")
 ap.add_argument("--stable", type=int, default=2, help="auto: passes an object must persist before queueing")
 ap.add_argument("--cooldown", type=float, default=5, help="auto: minimum seconds before a label that left and came back may queue again")
@@ -98,6 +105,19 @@ def save_wake(name, aliases):
 
 
 args.wake_name, args.wake_alias = load_wake()
+CAMERA_FILE = os.path.join(HERE, "camera.json")
+
+
+def load_rotate():
+    if args.rotate is not None:
+        return args.rotate
+    try:
+        return int(json.load(open(CAMERA_FILE)).get("rotate", 90))
+    except (OSError, ValueError):
+        return 90
+
+
+ROTATE_CODES = {90: 0, 180: 1, 270: 2}   # cv2.ROTATE_90_CLOCKWISE, ROTATE_180, ROTATE_90_COUNTERCLOCKWISE
 if args.recognizer != "sound":
     try:
         import cv2
@@ -141,6 +161,10 @@ SOUND_SERVICE = None
 STATE = {
     "frame": None, "jpeg": None, "frame_at": 0.0, "camera_ok": False,
     "detections": [], "best": None, "mode": args.mode, "queue": collections.deque(),   # kept sorted: speech, then text, then objects
+    "rotate": load_rotate(), "frame_size": None,
+    # Nearby-voice pathway (opt-in, off at every start): when a person is close to the
+    # camera, speech is accepted without the name and still takes speech precedence.
+    "proximity": {"enabled": bool(args.proximity), "threshold": args.proximity_threshold, "close": False, "ratio": 0.0, "grace_until": 0.0},
     "playing": None, "seq": 0, "paused": False, "engine": args.engine,
     "text": {"present": False, "cells": 0, "score": 0.0, "box": None, "since": 0.0},
     "read": {"available": bool(VLM_KEY) or True, "provider": VLM_PROVIDER, "model": None, "text": "", "confidence": 0.0,
@@ -180,7 +204,13 @@ def capture_loop():
         if is_image:   # a still image as a fake camera, handy for tests
             frame = cv2.imread(src)
             with LOCK:
+                rot = STATE["rotate"]
+            if frame is not None and rot in ROTATE_CODES:
+                frame = cv2.rotate(frame, ROTATE_CODES[rot])
+            with LOCK:
                 STATE["frame"], STATE["frame_at"], STATE["camera_ok"] = frame, time.time(), frame is not None
+                if frame is not None:
+                    STATE["frame_size"] = [frame.shape[1], frame.shape[0]]
             time.sleep(0.5)
             continue
         cap = cv2.VideoCapture(src, cv2.CAP_FFMPEG if isinstance(src, str) else cv2.CAP_ANY)
@@ -197,8 +227,13 @@ def capture_loop():
                 break
             n += 1
             with LOCK:
+                rot = STATE["rotate"]
+            if rot in ROTATE_CODES:
+                frame = cv2.rotate(frame, ROTATE_CODES[rot])
+            with LOCK:
                 STATE["frame"] = frame
                 STATE["frame_at"] = time.time()
+                STATE["frame_size"] = [frame.shape[1], frame.shape[0]]
                 STATE["camera_ok"] = True
                 if n % 10 == 0:
                     STATE["stats"]["fps"] = round(10 / max(1e-6, time.time() - t0), 1)
@@ -576,10 +611,17 @@ def update_sound_status(changes):
         STATE["sound"].update(changes)
 
 
-def publish_speech(text, confidence):
+def publish_speech(text, confidence, via="name"):
     """The only sound-mode path across the privacy boundary into the queue."""
-    enqueue({"kind": "speech", "label": text, "confidence": confidence, "box": None},
-            "name match", source="microphone")
+    enqueue({"kind": "speech", "label": text, "confidence": confidence, "box": None, "via": via},
+            "name match" if via == "name" else "nearby person", source="microphone")
+
+
+def nearby_person_allows_speech():
+    """True only while the opt-in pathway is on AND someone is close to the camera."""
+    with LOCK:
+        prox = STATE["proximity"]
+        return bool(prox["enabled"]) and time.time() < prox["grace_until"] and not STATE["paused"]
 
 
 def maybe_queue_text(text, conf):
@@ -634,11 +676,18 @@ def detect_loop():
         if td:
             dets.insert(0, td)
         best = choose_best(dets)
+        # nearby-voice pathway: is someone close? (largest person box vs frame height)
+        ratio = max((d["box"]["h"] for d in dets if d["kind"] == "object" and d["label"] == "person"), default=0.0)
         with LOCK:
             STATE["detections"] = dets
             STATE["best"] = best
             STATE["stats"].update(infer_ms=infer_ms, gate_ms=gate_ms, passes=passes)
             mode = STATE["mode"]
+            prox = STATE["proximity"]
+            prox["ratio"] = round(ratio, 3)
+            if ratio >= prox["threshold"]:
+                prox["grace_until"] = time.time() + 3.0      # stays 'close' briefly after they step back
+            prox["close"] = time.time() < prox["grace_until"]
         # object arrival tracking (text is queued by the reader when it comes back)
         now = time.time()
         seen = {d["label"].lower() for d in dets if d["kind"] == "object"}
@@ -698,6 +747,8 @@ def snapshot():
         gap_left = max(0.0, args.read_gap - (time.time() - r["requested_at"]))
         return {
             "recognizer": STATE["recognizer"], "sound": dict(STATE["sound"]),
+            "rotate": STATE["rotate"], "frame_size": STATE["frame_size"],
+            "proximity": {k: v for k, v in STATE["proximity"].items() if k != "grace_until"},
             "camera_ok": STATE["camera_ok"], "frame_age_ms": int((time.time() - STATE["frame_at"]) * 1000) if STATE["frame_at"] else None,
             "detections": STATE["detections"], "best": STATE["best"], "mode": STATE["mode"], "paused": STATE["paused"], "engine": STATE["engine"],
             "queue": list(STATE["queue"]), "playing": STATE["playing"], "stats": dict(STATE["stats"]),
@@ -809,6 +860,33 @@ class Handler(BaseHTTPRequestHandler):
             if target in ("all", "mic") and SOUND_SERVICE is not None:
                 SOUND_SERVICE.set_paused(paused)
             return self._json(200, snapshot())
+        if u.path == "/proximity":
+            v = q.get("enabled", ["0"])[0]
+            with LOCK:
+                STATE["proximity"]["enabled"] = v not in ("0", "false", "off")
+                if "threshold" in q:
+                    try:
+                        STATE["proximity"]["threshold"] = max(0.1, min(1.0, float(q["threshold"][0])))
+                    except ValueError:
+                        pass
+                on = STATE["proximity"]["enabled"]
+            log("NEARBY VOICE ON: speech from a close person is accepted without the name" if on else "nearby voice off")
+            return self._json(200, snapshot())
+        if u.path == "/rotate":
+            try:
+                deg = int(q.get("deg", ["0"])[0]) % 360
+            except ValueError:
+                return self._json(400, {"error": "deg must be 0, 90, 180 or 270"})
+            if deg not in (0, 90, 180, 270):
+                return self._json(400, {"error": "deg must be 0, 90, 180 or 270"})
+            with LOCK:
+                STATE["rotate"] = deg
+            try:
+                json.dump({"rotate": deg}, open(CAMERA_FILE, "w"))
+            except OSError:
+                pass
+            log(f"camera rotation -> {deg} deg clockwise")
+            return self._json(200, snapshot())
         if u.path == "/wake":
             name = q.get("name", [""])[0].strip()
             aliases = [a.strip() for a in q.get("aliases", [""])[0].split(",") if a.strip()]
@@ -852,6 +930,7 @@ if __name__ == "__main__":
                     request_timeout=args.transcription_timeout,
                 ),
                 on_result=publish_speech, on_status=update_sound_status, logger=log,
+                allow_without_name=nearby_person_allows_speech,
             )
             SOUND_SERVICE.start()
         except Exception as exc:

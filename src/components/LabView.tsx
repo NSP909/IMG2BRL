@@ -26,7 +26,7 @@ export function LabView({ bridge, onSend, nowPlaying }: Props) {
   const s = bridge.state;
   const soundMode = s?.recognizer === 'sound';
   const live: LiveFeed | null =
-    bridge.online && s ? { streamUrl: bridge.streamUrl, cameraOk: s.camera_ok, detections: s.detections, best: s.best, stats: s.stats } : null;
+    bridge.online && s ? { streamUrl: bridge.streamUrl, cameraOk: s.camera_ok, detections: s.detections, best: s.best, stats: s.stats, frameSize: s.frame_size } : null;
   const yolo = (s?.detections ?? []).filter((d) => !d.engine).sort((a, b) => b.confidence - a.confidence);
   const read = s?.read;
   const gate = s?.text;
@@ -54,6 +54,16 @@ export function LabView({ bridge, onSend, nowPlaying }: Props) {
     <main className="layout lab">
       <div className="col" aria-label="Camera">
         <Viewfinder detection={null} scanning={false} onCapture={() => void bridge.capture()} live={live} />
+        {s && (
+          <div className="field__row">
+            <span className="small muted">Camera rotation · {s.frame_size ? `${s.frame_size[0]}×${s.frame_size[1]}` : '—'}</span>
+            <div className="tabs" role="radiogroup" aria-label="Rotation">
+              {([0, 90, 180, 270] as const).map((d) => (
+                <button key={d} type="button" className={`tab ${s.rotate === d ? 'is-active' : ''}`} onClick={() => bridge.setRotate(d)} disabled={!bridge.online}>{d}°</button>
+              ))}
+            </div>
+          </div>
+        )}
 
         <section className="card" aria-label="Best detection">
           <div className="card__head">

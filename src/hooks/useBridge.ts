@@ -7,6 +7,8 @@ import {
   bridgeSetEngine,
   bridgeSetMode,
   bridgeSetPausedTarget,
+  bridgeSetProximity,
+  bridgeSetRotate,
   bridgeSetWake,
   fetchBridgeState,
   loadBridgeUrl,
@@ -41,6 +43,10 @@ export interface Bridge {
   setMicPaused(paused: boolean): void;
   /** Change the wearer name the microphone listens for. */
   setWake(name: string, aliases: string[]): Promise<boolean>;
+  /** Opt-in nearby-voice pathway. */
+  setProximity(enabled: boolean): void;
+  /** Clockwise camera rotation. */
+  setRotate(deg: 0 | 90 | 180 | 270): void;
 }
 
 export function useBridge(): Bridge {
@@ -141,6 +147,21 @@ export function useBridge(): Bridge {
     [baseUrl],
   );
 
+  const setProximity = useCallback(
+    (enabled: boolean) => {
+      setState((s) => (s ? { ...s, proximity: { ...s.proximity, enabled } } : s));
+      bridgeSetProximity(baseUrl, enabled).then(setState).catch(() => {});
+    },
+    [baseUrl],
+  );
+
+  const setRotate = useCallback(
+    (deg: 0 | 90 | 180 | 270) => {
+      bridgeSetRotate(baseUrl, deg).then(setState).catch(() => {});
+    },
+    [baseUrl],
+  );
+
   return {
     baseUrl,
     online,
@@ -157,5 +178,7 @@ export function useBridge(): Bridge {
     micPaused: state?.sound.paused ?? false,
     setMicPaused,
     setWake,
+    setProximity,
+    setRotate,
   };
 }

@@ -20,6 +20,18 @@ export interface QueueItem extends BridgeDetection {
   source: 'camera' | 'microphone';
   /** 0 speech, 1 text, 2 object: the queue is kept in this order. */
   priority: number;
+  /** For speech: accepted because it named the wearer, or because someone was close (opt-in). */
+  via?: 'name' | 'nearby';
+}
+
+export interface Proximity {
+  /** The opt-in nearby-voice pathway. Off at every bridge start. */
+  enabled: boolean;
+  threshold: number;
+  /** A person is close to the camera right now (with a short grace period). */
+  close: boolean;
+  /** Height of the largest person box as a fraction of the frame. */
+  ratio: number;
 }
 
 export interface BridgeStats {
@@ -86,6 +98,11 @@ export interface ReadResult {
 }
 
 export interface BridgeState {
+  /** Clockwise rotation applied to camera frames, in degrees. */
+  rotate: number;
+  /** [width, height] of the (rotated) frames, once the camera is up. */
+  frame_size: [number, number] | null;
+  proximity: Proximity;
   recognizer: Recognizer;
   sound: SoundStatus;
   engine: Engine;
@@ -193,4 +210,12 @@ export type PauseTarget = 'all' | 'camera' | 'mic';
 
 export function bridgeSetPausedTarget(baseUrl: string, paused: boolean, target: PauseTarget): Promise<BridgeState> {
   return post<BridgeState>(baseUrl, `/pause?value=${paused ? 1 : 0}&target=${target}`);
+}
+
+export function bridgeSetProximity(baseUrl: string, enabled: boolean): Promise<BridgeState> {
+  return post<BridgeState>(baseUrl, `/proximity?enabled=${enabled ? 1 : 0}`);
+}
+
+export function bridgeSetRotate(baseUrl: string, deg: 0 | 90 | 180 | 270): Promise<BridgeState> {
+  return post<BridgeState>(baseUrl, `/rotate?deg=${deg}`);
 }

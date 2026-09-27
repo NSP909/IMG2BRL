@@ -75,8 +75,11 @@ Two seams are designed for replacement:
 ## Detection in: Pi camera → laptop → queue → finger
 
 The Pi's camera module streams 720p MJPEG at 30 fps (`camera-stream.service`,
-tcp 8555). A bridge process on the laptop pulls that stream, re-serves it to
-the browser at full rate with the latest boxes drawn on, and, twice a second:
+tcp 8555). A bridge process on the laptop pulls that stream, rotates each
+frame to match how the camera is mounted (default 90° clockwise; change it
+in the lab or with `POST /rotate?deg=`, saved in `bridge/camera.json`),
+re-serves it to the browser at full rate with the latest boxes drawn on,
+and, twice a second:
 
 1. **Objects · YOLO26** (`pi/models/yolo26n-seg.pt`, ~40 ms on the GPU),
    filtered to a short list of things you meet at a venue: person, phone,
@@ -134,7 +137,8 @@ Bridge API on `:8765`: `GET /state`, `GET /frame.jpg`, `GET /stream.mjpg`,
 `POST /next`, `POST /capture`, `POST /queue?text=`, `POST /clear`,
 `POST /mode?value=auto|manual`, `POST /engine?value=vlm|tesseract|none`,
 `POST /analyze` (read now), `POST /pause?value=1|0&target=all|camera|mic`,
-`POST /wake?name=&aliases=`. The dev server forwards `/bridge/*` to it.
+`POST /wake?name=&aliases=`, `POST /proximity?enabled=`, `POST /rotate?deg=`.
+The dev server forwards `/bridge/*` to it.
 
 The Pi camera has one consumer at a time: stop the bridge before using
 `tools/pi_camera_view.sh`, and vice versa.
@@ -153,6 +157,14 @@ interrupts a camera message that is already playing.
 
 The name is set from the website (the microphone card on the Finger screen
 and in the lab) and saved in `bridge/wake.json`, so it survives restarts.
+
+**Nearby voice (opt-in, experimental).** A second pathway accepts speech
+*without* the name while a person is close to the camera (largest person box
+taller than 55 % of the frame, with a 3 s grace period). It is **off at every
+start**; the switch is in the microphone card, and the top bar shows an amber
+"Nearby voice on" badge while it is enabled, because it will transcribe and
+play anything a nearby person says. `POST /proximity?enabled=1|0` is the API;
+`--proximity` starts with it on, `--proximity-threshold` tunes "close".
 `--wake-name` / `--wake-alias` still work on the command line, and
 `POST /wake?name=Priya&aliases=Pri,Priyan` is the API behind the form.
 

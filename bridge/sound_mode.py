@@ -38,7 +38,7 @@ class NameGate:
         self.cooldown = cooldown
         self.recent: dict[tuple[str, ...], float] = {}
 
-    def check(self, transcript: str, now: float | None = None) -> tuple[str | None, str]:
+    def check(self, transcript: str, now: float | None = None, require_name: bool = True) -> tuple[str | None, str]:
         text = " ".join(str(transcript).split()).strip()
         tokens = words(text)
         if not text:
@@ -48,7 +48,7 @@ class NameGate:
             for name in self.names
             for i in range(len(tokens) - len(name) + 1)
         )
-        if not matched:
+        if not matched and require_name:
             return None, "name not found"
         current = time.monotonic() if now is None else now
         if tokens in self.recent and current - self.recent[tokens] < self.cooldown:
@@ -137,12 +137,16 @@ class SoundService:
         self,
         config: SoundConfig,
         *,
-        on_result: Callable[[str, float], None],
+        on_result: Callable[..., None],
         on_status: Callable[[Mapping[str, Any]], None],
         logger: Callable[[str], None],
+        allow_without_name: Callable[[], bool] | None = None,
     ) -> None:
         self.config = config
         self.on_result, self.on_status, self.log = on_result, on_status, logger
+        # Optional extra pathway: when this returns True (e.g. a person is close to the
+        # camera) an utterance is accepted even without the name. Off unless provided.
+        self.allow_without_name = allow_without_name
         self.gate = NameGate(config.wake_name, config.aliases)
         self.segmenter = Segmenter()
         self.audio: queue.Queue[tuple[int, np.ndarray]] = queue.Queue(maxsize=8)
@@ -315,14 +319,17 @@ class SoundService:
                 continue
             with self.lock:
                 gate = self.gate
-            accepted, reason = gate.check(transcript)
+            bypass = bool(self.allow_without_name and self.allow_without_name())
+            named, _ = gate.check(transcript, require_name=True) if bypass else (None, "")
+            accepted, reason = (named, "accepted") if named else gate.check(transcript, require_name=not bypass)
+            via = "name" if named or not bypass else "nearby"
             transcript = ""
             if accepted:
                 self.accepted += 1
-                self.on_result(accepted, 1.0)
+                self.on_result(accepted, 1.0, via)
                 self.status(state="listening", latency_ms=latency, accepted_count=self.accepted,
-                            last_text=accepted, error=None)
-                self.log(f"accepted speech ({latency} ms): {accepted!r}")
+                            last_text=accepted, last_via=via, error=None)
+                self.log(f"accepted speech via {via} ({latency} ms): {accepted!r}")
             else:
                 self.discarded += 1
                 self.status(state="listening", latency_ms=latency, discarded_count=self.discarded, error=None)

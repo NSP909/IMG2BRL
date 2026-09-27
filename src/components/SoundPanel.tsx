@@ -89,6 +89,20 @@ export function SoundPanel({ bridge }: Props) {
         </div>
       )}
       {sound?.last_text && <p className="sound__last"><span className="chip chip--speech">speech</span>{sound.last_text}</p>}
+
+      {bridge.state && bridge.state.recognizer === 'both' && (
+        <div className={`nearby ${bridge.state.proximity.enabled ? 'is-on' : ''}`}>
+          <label className="switch" htmlFor="nearby-voice">
+            <input id="nearby-voice" type="checkbox" checked={bridge.state.proximity.enabled} onChange={(e) => bridge.setProximity(e.target.checked)} disabled={!bridge.online} />
+            <span className="switch__track" aria-hidden><span className="switch__knob" /></span>
+            <span><b>Nearby voice</b> · accept speech without the name while someone is close to the camera</span>
+          </label>
+          <span className="small mono muted">
+            {bridge.state.proximity.close ? 'person close' : 'no one close'} · {Math.round(bridge.state.proximity.ratio * 100)}% of frame
+          </span>
+          {bridge.state.proximity.enabled && <p className="small nearby__warn">Experimental: any speech from a nearby person is transcribed and sent to the finger. Turn it off when not demonstrating it.</p>}
+        </div>
+      )}
       <p className="small muted">Only complete utterances containing the name or an alias enter the queue, ahead of anything the camera saw. Other speech is discarded without being shown or logged.</p>
     </section>
   );

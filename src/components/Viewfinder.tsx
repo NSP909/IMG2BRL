@@ -10,6 +10,8 @@ export interface LiveFeed {
   detections: BridgeDetection[];
   best: BridgeDetection | null;
   stats: BridgeStats;
+  /** [width, height] of the frames as streamed (after rotation). */
+  frameSize: [number, number] | null;
 }
 
 interface Props {
@@ -27,7 +29,10 @@ export function Viewfinder({ detection, scanning, onCapture, live }: Props) {
 
   return (
     <section className="card viewfinder" aria-label="Camera">
-      <div className={`vf__frame ${isLive || webcam ? 'vf__frame--live' : ''}`}>
+      <div
+        className={`vf__frame ${isLive || webcam ? 'vf__frame--live' : ''} ${live?.frameSize && live.frameSize[1] > live.frameSize[0] ? 'vf__frame--portrait' : ''}`}
+        style={live?.frameSize ? { aspectRatio: `${live.frameSize[0]} / ${live.frameSize[1]}` } : undefined}
+      >
         {live ? (
           <img className="vf__video" src={live.streamUrl} alt="Live view from the Pi camera" />
         ) : (

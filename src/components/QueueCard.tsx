@@ -36,7 +36,7 @@ export function QueueCard({ bridge, nowPlaying }: Props) {
             {queue.map((q, i) => (
               <div key={q.id} className="queue__item">
                 <span className="queue__idx mono">{i + 1}</span>
-                <span className={`chip chip--${q.kind}`}>{q.kind}</span>
+                <span className={`chip chip--${q.kind}`}>{q.kind === 'speech' && q.via === 'nearby' ? 'nearby' : q.kind}</span>
                 <span className="queue__label">{q.label}</span>
                 <span className="mono small muted">{Math.round(q.confidence * 100)}%</span>
               </div>
