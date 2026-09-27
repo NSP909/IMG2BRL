@@ -880,6 +880,7 @@ def detect_loop():
     log(f"objects: {STATE['stats']['model']} on {args.device}, keeping {len(KEEP)} classes; mode={STATE['mode']}")
     passes = 0
     text_streak = 0
+    last_asl_frame_at = 0.0
     while True:
         with LOCK:
             frame, paused = STATE["frame"], STATE["paused"]
@@ -900,10 +901,19 @@ def detect_loop():
             # Rune needs to read upright but which rotates hand landmarks
             # away from the orientation the KNN samples were recorded in
             # (a browser webcam feed, never rotated) -- see STATE["frame_raw"].
+            # Only fresh frames from this process's own camera, each once.
+            # Browser frames arrive through POST /asl_frame instead; reading a
+            # stale frame here (the Pi's last one, left behind when it drops)
+            # alongside the browser's live ones made the reading and the
+            # skeleton jump between two hands.
             with LOCK:
                 asl_frame, asl_rotate = STATE["frame_raw"], STATE["frame_raw_rotate"]
-            if asl_frame is None:
-                asl_frame, asl_rotate = frame, 0
+                own_fresh = time.time() - STATE["bridge_frame_at"] < 1.0
+                frame_at = STATE["frame_at"]
+            if not own_fresh or asl_frame is None or frame_at == last_asl_frame_at:
+                time.sleep(0.01)
+                continue
+            last_asl_frame_at = frame_at
             asl_small = (
                 cv2.resize(asl_frame, (960, int(asl_frame.shape[0] * 960 / asl_frame.shape[1])))
                 if asl_frame.shape[1] > 960 else asl_frame
